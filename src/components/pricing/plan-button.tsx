@@ -242,7 +242,7 @@ function getButtonLabel(
 export function UpgradeButton(props: PlanButtonProps) {
   const { checkout, attach, openBillingPortal } = useCustomer();
 
-  const { userId, orgId } = useAuth();
+  const { userId } = useAuth();
   const [invoice, setInvoice] = useState<Invoice | undefined>();
   const [isLoading, setIsLoading] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -923,14 +923,6 @@ export function UpgradeButton(props: PlanButtonProps) {
               if (isCustom) {
                 router.navigate({
                   to: "/onboarding-call",
-                  search: {},
-                });
-                return;
-              }
-
-              if (!orgId) {
-                router.navigate({
-                  to: "/create-org",
                   search: {},
                 });
                 return;
