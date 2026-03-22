@@ -280,10 +280,10 @@ if (!rootElement.innerHTML) {
       }}
       publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
       afterSignOutUrl="/"
-      afterSignUpUrl={
-        process.env.NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL || "/workflows"
+      signUpForceRedirectUrl={
+        process.env.NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL || "/pricing"
       }
-      afterSignInUrl={
+      signInForceRedirectUrl={
         process.env.NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL || "/workflows"
       }
       signUpFallbackRedirectUrl={

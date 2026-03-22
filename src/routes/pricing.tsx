@@ -1,8 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter, useSearch } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { AnimatedLogoCard } from "@/components/AnimatedLogoCard";
 import {
   GPUPriceSimulator,
@@ -32,6 +32,7 @@ import SliversideLogo from "@/logos/sliverside.svg";
 import VizcomLogo from "@/logos/vizcom.svg";
 import WildlifeLogo from "@/logos/wildlife.svg";
 import { SignedIn } from "@clerk/clerk-react";
+import { useCustomer } from "autumn-js/react";
 
 export const Route = createFileRoute("/pricing")({
   component: RouteComponent,
@@ -39,15 +40,14 @@ export const Route = createFileRoute("/pricing")({
     return {
       ready: search.ready as boolean | undefined,
       plan: search.plan as string | undefined,
+      checkout: search.checkout as string | undefined,
     };
   },
 });
 
 type TierFeature = {
-  Basic?: ReactNode | boolean | number;
-  Creator?: ReactNode | boolean | number;
-  Deployment?: ReactNode | boolean | number;
   Business?: ReactNode | boolean | number;
+  Enterprise?: ReactNode | boolean | number;
 };
 
 type Tier = {
@@ -60,33 +60,12 @@ type Tier = {
 
 const tiers: Tier[] = [
   {
-    name: "Pay as you go",
-    id: "free",
-    priceMonthly: "Free",
-    priceYearly: "Free",
-    description: "Run any ComfyUI workflow now",
-  },
-  {
-    name: "Creator",
-    id: "creator",
-    priceMonthly: "$34",
-    priceYearly: "$340",
-    description: "For individual creators, run ComfyUI anywhere",
-  },
-  {
-    name: "Deployment",
-    id: "deployment",
-    priceMonthly: "$100",
-    priceYearly: "$1000",
-    description: "For production deployments, team collaboration",
-  },
-  {
     name: "Business",
     id: "business",
     priceMonthly: "from $998",
     priceYearly: "from $9980",
     description:
-      "Enterprise-grade AI infrastructure trusted by industry leaders",
+      "Required plan for hosted ComfyDeploy workspaces, machines, models, and workflows",
   },
   {
     name: "Enterprise",
@@ -281,14 +260,8 @@ function PricingTier({
   };
 
   const renderIncludesMessage = () => {
-    if (tier.id === "free") return null;
-    if (tier.name === "Business") return null; // Hide includes message for Business
-    if (tier.name === "Creator") return "Includes everything in Pay as you go";
-    if (tier.name === "Deployment") {
-      return showCreatorTier
-        ? "Includes everything in Creator"
-        : "Includes everything in Pay as you go";
-    }
+    if (tier.name === "Business") return null;
+    if (tier.name === "Enterprise") return "Includes everything in Business";
     return null;
   };
 
@@ -779,7 +752,7 @@ function GPUPricingTable() {
                       : "hover:bg-gray-100 text-gray-600 dark:text-zinc-400 dark:hover:bg-zinc-700/50",
                   )}
                 >
-                  Pay as you go
+                  Usage-based rates
                 </Button>
                 <Button
                   variant="ghost"
@@ -1013,51 +986,69 @@ function RouteComponent() {
 }
 
 export function PricingPage() {
-  const { data: _sub, isLoading } = useCurrentPlanWithStatus();
+  const { data: _sub, isLoading, refetch: refetchPlan } = useCurrentPlanWithStatus();
+  const { refetch: refetchCustomer } = useCustomer();
+  const router = useRouter();
+  const search = useSearch({ from: "/pricing" });
   const [isYearly, setIsYearly] = useState(false);
+  const [isUnlockingWorkspace, setIsUnlockingWorkspace] = useState(false);
 
   // Feature flags
   const showBusinessUpgradeButton = true;
 
-  // Determine user's current plan
-  const userPlans = _sub?.plans?.plans || [];
-  const isOnFreePlan =
-    userPlans.some((plan: string) => plan.startsWith("free")) ||
-    userPlans.length === 0;
-  const isOnCreatorPlan = userPlans.some((plan: string) =>
-    plan.startsWith("creator"),
-  );
-  const isOnDeploymentPlan = userPlans.some((plan: string) =>
-    plan.startsWith("deployment"),
-  );
-  const isOnBusinessPlan = userPlans.some((plan: string) =>
-    plan.startsWith("business"),
+  const filteredTiers = tiers.filter(
+    (tier) => tier.id === "business" || tier.id === "large_enterprise",
   );
 
-  const filteredTiers = tiers.filter((tier) => {
-    if (tier.id === "free") return true;
-
-    if (tier.id === "business") return true;
-
-    if (tier.id === "large_enterprise") return true;
-
-    if (tier.id === "creator" || tier.id === "deployment") {
-      if (isOnCreatorPlan || isOnDeploymentPlan) return true;
-
-      if (isOnFreePlan) return false;
-
-      if (userPlans.length === 0 || isOnBusinessPlan) return false;
-
-      return true;
+  useEffect(() => {
+    if (search.checkout !== "success") {
+      return;
     }
 
-    return true;
-  });
+    let isActive = true;
 
-  // Show billing toggle only when creator or deployment tiers are present
-  const showBillingToggle = filteredTiers.some(
-    (tier) => tier.id === "creator" || tier.id === "deployment",
-  );
+    const unlockWorkspace = async () => {
+      setIsUnlockingWorkspace(true);
+
+      try {
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          await refetchCustomer();
+          const refreshedPlan = await refetchPlan();
+          const activePlans = refreshedPlan.data?.plans?.plans ?? [];
+
+          if (
+            isActive &&
+            activePlans.some(
+              (plan: string) =>
+                plan === "business_monthly" || plan === "business_yearly",
+            )
+          ) {
+            router.navigate({
+              to: "/workflows",
+              search: {},
+            });
+            return;
+          }
+
+          if (attempt < 5) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+      } finally {
+        if (isActive) {
+          setIsUnlockingWorkspace(false);
+        }
+      }
+    };
+
+    void unlockWorkspace();
+
+    return () => {
+      isActive = false;
+    };
+  }, [refetchCustomer, refetchPlan, router, search.checkout]);
+
+  const showBillingToggle = filteredTiers.some((tier) => tier.id === "business");
 
   const isCancelled = _sub?.sub?.cancel_at_period_end;
 
@@ -1067,11 +1058,16 @@ export function PricingPage() {
         {/* Header */}
         <div className="mx-auto max-w-6xl py-12">
           <h1 className="font-bold sm:text-5xl text-4xl text-gray-900 tracking-tight dark:text-zinc-200">
-            Power your teams with Cloud Hosted ComfyUI
+            Choose a business plan to activate your workspace
           </h1>
           <p className="leading-8 mt-4 text-lg text-gray-600 dark:text-zinc-400">
-            We work closely with you to bring your workflow to your teams.
+            ComfyDeploy is currently business-plan only. Pick a plan before creating machines, workflows, or private model storage.
           </p>
+          {isUnlockingWorkspace && (
+            <p className="mt-3 text-sm text-gray-500 dark:text-zinc-400">
+              Confirming your Business plan and unlocking your workspace...
+            </p>
+          )}
         </div>
 
         {/* Pricing Section */}
@@ -1180,113 +1176,33 @@ export function PricingPage() {
 
           {/* Pricing Cards */}
           <div className="relative z-10 overflow-hidden shadow-lg dark:shadow-2xl dark:shadow-zinc-900">
-            {/* Free and Business Tiers Side by Side */}
             <div className="relative z-10">
-              <div className="grid grid-cols-1 lg:grid-cols-2 border border-gray-200 dark:border-zinc-700">
-                {/* Free Tier */}
-                {filteredTiers.find((tier) => tier.id === "free") && (
-                  <PricingTier
-                    tier={filteredTiers.find((tier) => tier.id === "free")!}
-                    isLoading={isLoading}
-                    plans={_sub?.plans?.plans ?? []}
-                    className={cn(
-                      "lg:border-r bg-gradient-to-bl from-gray-50/10 via-gray-50/80 to-gray-100 dark:lg:border-zinc-700 dark:from-zinc-800/10 dark:via-zinc-800/80 dark:to-zinc-700",
-                      filteredTiers.some((tier) => tier.id === "creator") ||
-                        filteredTiers.some((tier) => tier.id === "deployment")
-                        ? "rounded-tl-sm"
-                        : "rounded-l-sm",
-                    )}
-                    isYearly={isYearly}
-                    showCreatorTier={filteredTiers.some(
-                      (tier) => tier.id === "creator",
-                    )}
-                    showDeploymentTier={filteredTiers.some(
-                      (tier) => tier.id === "deployment",
-                    )}
-                    showBusinessUpgradeButton={showBusinessUpgradeButton}
-                  />
-                )}
-
-                {/* Business Tier */}
+              <div className="grid grid-cols-1 border border-gray-200 dark:border-zinc-700 lg:grid-cols-2">
                 {filteredTiers.find((tier) => tier.id === "business") && (
                   <PricingTier
                     tier={filteredTiers.find((tier) => tier.id === "business")!}
                     isLoading={isLoading}
                     plans={_sub?.plans?.plans ?? []}
-                    className={cn(
-                      "bg-gradient-to-bl from-purple-50/10 via-purple-50/80 to-purple-100 dark:from-purple-900/10 dark:via-purple-900/30 dark:to-purple-800/50",
-                      filteredTiers.some((tier) => tier.id === "creator") ||
-                        filteredTiers.some((tier) => tier.id === "deployment")
-                        ? "rounded-tr-sm"
-                        : "rounded-r-sm",
-                    )}
+                    className="rounded-l-sm bg-gradient-to-bl from-purple-50/10 via-purple-50/80 to-purple-100 dark:from-purple-900/10 dark:via-purple-900/30 dark:to-purple-800/50"
                     isYearly={isYearly}
-                    showCreatorTier={filteredTiers.some(
-                      (tier) => tier.id === "creator",
-                    )}
-                    showDeploymentTier={filteredTiers.some(
-                      (tier) => tier.id === "deployment",
-                    )}
+                    showCreatorTier={false}
+                    showDeploymentTier={false}
+                    showBusinessUpgradeButton={showBusinessUpgradeButton}
+                  />
+                )}
+                {filteredTiers.find((tier) => tier.id === "large_enterprise") && (
+                  <PricingTier
+                    tier={filteredTiers.find((tier) => tier.id === "large_enterprise")!}
+                    isLoading={isLoading}
+                    plans={_sub?.plans?.plans ?? []}
+                    className="rounded-r-sm bg-gradient-to-bl from-slate-50/10 via-slate-50/80 to-slate-100 dark:border-zinc-700 dark:from-zinc-900/20 dark:via-zinc-900/60 dark:to-zinc-800/80 lg:border-l"
+                    isYearly={isYearly}
+                    showCreatorTier={false}
+                    showDeploymentTier={false}
                     showBusinessUpgradeButton={showBusinessUpgradeButton}
                   />
                 )}
               </div>
-
-              {/* Creator and Deployment Tiers */}
-              {(filteredTiers.some((tier) => tier.id === "creator") ||
-                filteredTiers.some((tier) => tier.id === "deployment")) && (
-                  <div
-                    className={cn(
-                      "grid border border-gray-200 border-t-0 dark:border-zinc-700",
-                      filteredTiers.some((tier) => tier.id === "creator") &&
-                        filteredTiers.some((tier) => tier.id === "deployment")
-                        ? "grid-cols-1 lg:grid-cols-2"
-                        : "grid-cols-1",
-                    )}
-                  >
-                    {filteredTiers.find((tier) => tier.id === "creator") && (
-                      <PricingTier
-                        tier={
-                          filteredTiers.find((tier) => tier.id === "creator")!
-                        }
-                        isLoading={isLoading}
-                        plans={_sub?.plans?.plans ?? []}
-                        className={cn(
-                          "bg-gradient-to-bl from-amber-50/10 via-amber-50/80 to-amber-100 dark:from-amber-900/10 dark:via-amber-900/30 dark:to-amber-800/50",
-                          filteredTiers.some((tier) => tier.id === "deployment")
-                            ? "rounded-bl-sm lg:border-r dark:lg:border-zinc-700"
-                            : "rounded-b-sm",
-                        )}
-                        isYearly={isYearly}
-                        showCreatorTier={filteredTiers.some(
-                          (tier) => tier.id === "creator",
-                        )}
-                        showDeploymentTier={filteredTiers.some(
-                          (tier) => tier.id === "deployment",
-                        )}
-                        showBusinessUpgradeButton={showBusinessUpgradeButton}
-                      />
-                    )}
-                    {filteredTiers.find((tier) => tier.id === "deployment") && (
-                      <PricingTier
-                        tier={
-                          filteredTiers.find((tier) => tier.id === "deployment")!
-                        }
-                        isLoading={isLoading}
-                        plans={_sub?.plans?.plans ?? []}
-                        className="rounded-br-sm bg-gradient-to-bl from-blue-50/10 via-blue-50/80 to-blue-100 dark:from-blue-900/10 dark:via-blue-900/30 dark:to-blue-800/50"
-                        isYearly={isYearly}
-                        showCreatorTier={filteredTiers.some(
-                          (tier) => tier.id === "creator",
-                        )}
-                        showDeploymentTier={filteredTiers.some(
-                          (tier) => tier.id === "deployment",
-                        )}
-                        showBusinessUpgradeButton={showBusinessUpgradeButton}
-                      />
-                    )}
-                  </div>
-                )}
             </div>
 
             <div className="absolute inset-0 h-full w-full bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear-gradient(to_bottom,#f0f0f0_1px,transparent_1px)] bg-[size:6rem_4rem] bg-white dark:bg-[linear-gradient(to_right,#27272a_1px,transparent_1px),linear-gradient(to_bottom,#27272a_1px,transparent_1px)] dark:bg-zinc-900" />

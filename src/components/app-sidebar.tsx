@@ -23,7 +23,6 @@ import {
   LogIn,
   MessageCircle,
   Moon,
-  Plus,
   Receipt,
   Rss,
   Search,
@@ -76,13 +75,11 @@ import {
   InfoCardTitle,
 } from "@/kl-ui/info-card";
 import { api } from "@/lib/api";
-import { useCreditInDollars } from "@/lib/autumn-helpers";
 import { callServerPromise } from "@/lib/call-server-promise";
 import { cn, isDarkTheme } from "@/lib/utils";
 import { WorkflowsBreadcrumb } from "@/routes/workflows/$workflowId/$view.lazy";
 import { getOrgPathInfo } from "@/utils/org-path";
 import { Icon } from "./icon-word";
-import { TopUpButton } from "./pricing/TopUpButton";
 import { useTheme } from "./theme-provider";
 import { Badge } from "./ui/badge";
 import { Skeleton } from "./ui/skeleton";
@@ -664,16 +661,11 @@ export function AppSidebar() {
 function PlanBadge() {
   const { data: plan, isLoading } = useCurrentPlanWithStatus();
 
-  const { credit: totalBalance, isLoading: isAutumnDataLoading } =
-    useCreditInDollars();
-
-  const { displayPlan, badgeColor, isFreePlan } = useMemo(() => {
+  const { displayPlan, badgeColor, requiresPlan } = useMemo(() => {
     const planId = plan?.plans?.plans[0] || "";
-    const isFreePlan =
-      !plan?.plans?.plans?.length ||
-      plan?.plans?.plans?.some((p: string) => p.startsWith("free"));
+    const requiresPlan = !plan?.plans?.plans?.length;
 
-    let displayPlan = "Pay as you go";
+    let displayPlan = "Business required";
     let badgeColor = "secondary";
 
     // Logic to determine which plan to display
@@ -690,33 +682,20 @@ function PlanBadge() {
       badgeColor = "purple";
     }
 
-    return { displayPlan, badgeColor, isFreePlan };
+    return { displayPlan, badgeColor, requiresPlan };
   }, [plan?.plans?.plans]);
 
-  if (isLoading || isAutumnDataLoading) {
+  if (isLoading) {
     return <Skeleton className="h-5 w-12" />;
   }
 
-  // For free plan users, show balance instead of plan badge
-  if (isFreePlan) {
+  if (requiresPlan) {
     return (
-      <div className="flex items-center gap-1 text-2xs">
-        {/* <span className="text-zinc-500 dark:text-zinc-400">Balance:</span> */}
-        <Link
-          to="/usage"
-          className="font-mono font-medium text-zinc-900 dark:text-zinc-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
-        >
-          ${totalBalance.toFixed(2)}
-        </Link>
-        <TopUpButton
-          size="sm"
-          variant="ghost"
-          className="h-4 w-4 p-0 hover:bg-blue-100 dark:hover:bg-blue-900/30"
-          showIcon={false}
-        >
-          <Plus className="h-3 w-3 text-zinc-500 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400" />
-        </TopUpButton>
-      </div>
+      <Link to="/pricing" search={{ ready: true, plan: "business", checkout: undefined }}>
+        <Badge variant="secondary" className="py-0 !text-2xs font-medium">
+          Business required
+        </Badge>
+      </Link>
     );
   }
 

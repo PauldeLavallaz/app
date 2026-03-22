@@ -5,22 +5,17 @@ import type {
 } from "@/types/autumn-v2";
 
 export function useCredit() {
-  const { check, customer, isLoading } = useCustomer();
+  const { check, isLoading } = useCustomer();
 
-  const isFreePlan = customer?.products.find((x) => x.id === "free");
-  const credit = isFreePlan
-    ? check({ featureId: "gpu-credit-topup" })
-    : check({ featureId: "gpu-credit" });
+  const credit = check({ featureId: "gpu-credit" });
 
   return { credit, isLoading };
 }
 
 export function useFreePlan() {
-  const { check, customer, isLoading } = useCustomer();
+  const { isLoading } = useCustomer();
 
-  const isFreePlan = customer?.products.find((x) => x.id === "free");
-
-  return { isFreePlan, isLoading };
+  return { isFreePlan: false, isLoading };
 }
 
 export function useCreditInDollars() {

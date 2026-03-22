@@ -291,7 +291,6 @@ export function WorkflowImportSelectedMachine() {
   const MACHINE_LIMIT_REACHED = machineLimitFeature
     ? !(machineLimitFeature.unlimited) && (machineLimitFeature.balance ?? 0) <= 0
     : sub?.features?.machineLimited;
-  const isFreePlan = !sub?.plans?.plans?.length || sub?.plans?.plans?.includes("free");
 
   // Clear machine config when switching between new/existing machine
   const prevMachineOption = React.useRef(validation.machineOption);
@@ -985,7 +984,6 @@ function DetectedCustomNodesSection({
   );
   const { data: latestHashes } = useLatestHashes();
   const sub = useCurrentPlan();
-  const isFreePlan = !sub?.plans?.plans?.length || sub?.plans?.plans?.includes("free");
 
   // Auto-generate machine name and set default GPU if not set
   useEffect(() => {
@@ -1166,13 +1164,8 @@ function DetectedCustomNodesSection({
       </div>
     );
   }
-
-  // Free plan now supports all custom nodes
-
   return (
     <>
-      {/* All custom nodes allowed on Free plan - no warning */}
-
       {isConfigured ? (
         <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
           <div className="flex items-center gap-2">

@@ -146,6 +146,8 @@ interface CheckoutResponse {
   error?: string | null;
 }
 
+const BUSINESS_PLAN_IDS = ["business_monthly", "business_yearly"] as const;
+
 function getButtonLabel(
   currentPlans: string[],
   targetPlan: string,
@@ -240,7 +242,7 @@ function getButtonLabel(
 }
 
 export function UpgradeButton(props: PlanButtonProps) {
-  const { checkout, attach, openBillingPortal } = useCustomer();
+  const { attach, openBillingPortal } = useCustomer();
 
   const { userId, orgId } = useAuth();
   const [invoice, setInvoice] = useState<Invoice | undefined>();
@@ -304,13 +306,18 @@ export function UpgradeButton(props: PlanButtonProps) {
   const handlePlanChange = async () => {
     setIsLoading(true);
     try {
+      const successUrl = new URL("/pricing", window.location.origin);
+      successUrl.searchParams.set("ready", "true");
+      successUrl.searchParams.set("plan", "business");
+      successUrl.searchParams.set("checkout", "success");
+
       const res = await callServerPromise(
         api({
           url: "platform/checkout",
           params: {
             plan: props.plan,
             trial: props.trial,
-            redirect_url: window.location.href,
+            redirect_url: successUrl.toString(),
             upgrade: true,
             coupon,
           },
@@ -319,6 +326,9 @@ export function UpgradeButton(props: PlanButtonProps) {
 
       if (res.error) {
         toast.error(res.error);
+      } else if (res.data) {
+        setCheckoutPreview(res.data);
+        setShowCheckoutPreview(true);
       } else if (res.url) {
         window.location.href = res.url;
       }
@@ -653,6 +663,7 @@ export function UpgradeButton(props: PlanButtonProps) {
                   await queryClient.invalidateQueries({
                     queryKey: ["platform", "plan"],
                   });
+                  window.location.href = "/workflows";
                 } catch (error) {
                   console.error("Attach error:", error);
                   toast.error("Failed to update plan. Please try again.");
@@ -681,7 +692,7 @@ export function UpgradeButton(props: PlanButtonProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Manage Business Plan</AlertDialogTitle>
             <AlertDialogDescription>
-              If you downgrade to the Free plan, you'll lose access to these
+              If you move off the Business plan, your workspace will lose these
               features and limits:
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -901,10 +912,7 @@ export function UpgradeButton(props: PlanButtonProps) {
               }
 
               if (isBasic) {
-                router.navigate({
-                  to: "/workflows",
-                  search: {},
-                });
+                window.location.href = "/workflows";
                 return;
               }
 
@@ -937,47 +945,6 @@ export function UpgradeButton(props: PlanButtonProps) {
               }
 
               if (label === "Manage" || label.includes("Manage")) {
-                // Show downgrade preview for business plan users
-                if (isOnBusinessPlan) {
-                  setIsLoading(true);
-                  try {
-                    // Call checkout with basic plan to get preview of what they'll lose
-                    const result = (await checkout({
-                      productId: "free",
-                    })) as CheckoutResponse;
-
-                    if (result.error) {
-                      toast.error(result.error);
-                      await openBillingPortal({
-                        openInNewTab: true,
-                      });
-                      return;
-                    }
-
-                    // If we get preview data, show the downgrade dialog
-                    if (result.data) {
-                      setDowngradePreviewData(result.data);
-                      setShowDowngradePreview(true);
-                      return;
-                    }
-
-                    // Fallback to billing portal if no preview data
-                    await openBillingPortal({
-                      openInNewTab: true,
-                    });
-                  } catch (error) {
-                    console.error("Downgrade preview error:", error);
-                    // Fallback to billing portal on error
-                    await openBillingPortal({
-                      openInNewTab: true,
-                    });
-                  } finally {
-                    setIsLoading(false);
-                  }
-                  return;
-                }
-
-                // For non-business users, go to billing portal directly
                 await openBillingPortal({
                   openInNewTab: true,
                 });
@@ -990,38 +957,12 @@ export function UpgradeButton(props: PlanButtonProps) {
                 label === "Switch to monthly" ||
                 label === "Switch to yearly"
               ) {
-                setIsLoading(true);
-                try {
-                  const result = (await checkout({
-                    productId: props.plan,
-                  })) as CheckoutResponse;
-
-                  if (result.error) {
-                    toast.error(result.error);
-                    return;
-                  }
-
-                  // If we get a URL, redirect immediately
-                  if (result.url) {
-                    window.location.href = result.url;
-                    return;
-                  }
-
-                  // If we get preview data, show the confirmation dialog
-                  if (result.data) {
-                    setCheckoutPreview(result.data);
-                    setShowCheckoutPreview(true);
-                    return;
-                  }
-
-                  // Fallback error
-                  toast.error("No checkout data received");
-                } catch (error) {
-                  console.error("Checkout error:", error);
-                  toast.error("Failed to process checkout");
-                } finally {
-                  setIsLoading(false);
+                if (!BUSINESS_PLAN_IDS.includes(props.plan as (typeof BUSINESS_PLAN_IDS)[number])) {
+                  toast.error("Only the Business plan is available in this environment.");
+                  return;
                 }
+
+                await handlePlanChange();
                 return;
               }
 

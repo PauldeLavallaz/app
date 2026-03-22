@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
+  hasBusinessPlan,
   type SubscriptionPlan,
   useCurrentPlan,
   useCurrentPlanWithStatus,
@@ -359,8 +360,7 @@ function ServerlessSettings({
   const isBusiness = sub?.plans?.plans?.some((plan) =>
     plan.includes("business"),
   );
-  const isFreePlan =
-    !sub?.plans?.plans?.length || sub?.plans?.plans?.includes("free");
+  const requiresBusinessPlan = !hasBusinessPlan(sub?.plans?.plans);
 
   // Session check hooks and data
   const [showSessionDialog, setShowSessionDialog] = useState(false);
@@ -766,16 +766,16 @@ function ServerlessSettings({
                                     value={field.value ?? ""}
                                     onChange={field.onChange}
                                     disabled={
-                                      isFreePlan && machine.id !== "new"
+                                      requiresBusinessPlan && machine.id !== "new"
                                     }
                                   />
                                 </FormControl>
                                 <FormDescription>
                                   Specify a custom base Docker image for your
                                   machine
-                                  {isFreePlan && machine.id !== "new" && (
+                                  {requiresBusinessPlan && machine.id !== "new" && (
                                     <span className="text-amber-600 ml-2">
-                                      Disabled on Free plan
+                                      Locked until Business is active
                                     </span>
                                   )}
                                 </FormDescription>
@@ -795,7 +795,7 @@ function ServerlessSettings({
                                     checked={field.value}
                                     onCheckedChange={field.onChange}
                                     disabled={
-                                      isFreePlan && machine.id !== "new"
+                                      requiresBusinessPlan && machine.id !== "new"
                                     }
                                   />
                                 </FormControl>
@@ -806,9 +806,9 @@ function ServerlessSettings({
                                   <FormDescription>
                                     Enable GPU support for custom node
                                     installation
-                                    {isFreePlan && machine.id !== "new" && (
+                                    {requiresBusinessPlan && machine.id !== "new" && (
                                       <span className="text-amber-600 ml-2">
-                                        Enforced on Free plan
+                                        Managed by the Business workspace
                                       </span>
                                     )}
                                   </FormDescription>
@@ -1665,8 +1665,6 @@ function CustomNodeSetupWrapper({
   onChange: (value: any) => void;
   readonly?: boolean;
 }) {
-  // Free plan now supports all custom nodes; no gating required
-
   const [validation, setValidation] = useState<StepValidation>(() => ({
     docker_command_steps: value || { steps: [] },
     machineName: "",

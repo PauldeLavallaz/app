@@ -458,8 +458,7 @@ export const useImportWorkflowStore = create<StepValidation>((set, get) => ({
 export default function WorkflowImport() {
     const navigate = useNavigate();
     const { data: latestHashes, isLoading: hashesLoading } = useLatestHashes();
-    const sub = useCurrentPlan();
-    const isFreePlan = !sub?.plans?.plans?.length || sub?.plans?.plans?.includes("free");
+    useCurrentPlan();
 
     const { shared_slug: sharedSlug } = Route.useSearch();
 
@@ -594,20 +593,6 @@ export default function WorkflowImport() {
                     validation.docker_command_steps,
                     latestHashes,
                 );
-
-                // For free plan, filter to only ComfyUI Deploy nodes
-                // if (isFreePlan && finalDockerSteps?.steps) {
-                //     const filteredSteps = finalDockerSteps.steps.filter((step: any) => {
-                //         if (step.type !== "custom-node") return false;
-                //         const url = step.data?.url?.toLowerCase() || "";
-                //         return url.includes("github.com/bennykok/comfyui-deploy");
-                //     });
-
-                //     finalDockerSteps = {
-                //         ...finalDockerSteps,
-                //         steps: filteredSteps
-                //     };
-                // }
 
                 const machineData: any = {
                     name: validation.machineName,
@@ -936,8 +921,7 @@ function ImportView() {
     const setValidation = validation.setValidation;
 
     const { data: latestHashes, isLoading: hashesLoading } = useLatestHashes();
-    const sub = useCurrentPlan();
-    const isFreePlan = !sub?.plans?.plans?.length || sub?.plans?.plans?.includes("free");
+    useCurrentPlan();
     const [isDragging, setIsDragging] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [workflowJsonUrl] = useQueryState("workflow_json");

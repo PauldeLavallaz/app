@@ -16,8 +16,6 @@ export const useAutumnData = () => {
 };
 
 export const ALLOWED_DEPLOYMENT_PLANS = [
-  "deployment_monthly",
-  "deployment_yearly",
   "business_monthly",
   "business_yearly",
 ] as const;
@@ -26,6 +24,9 @@ export const ALLOWED_BUSINESS_PLANS = [
   "business_monthly",
   "business_yearly",
 ] as const;
+
+export const hasBusinessPlan = (plans: string[] | undefined) =>
+  !!plans?.some((plan) => ALLOWED_BUSINESS_PLANS.includes(plan as (typeof ALLOWED_BUSINESS_PLANS)[number]));
 
 type MetadataKey = "isDeploymentAllowed" | "isBusinessAllowed";
 
@@ -65,7 +66,7 @@ export const useIsDeploymentAllowed = () => {
 
 export const useIsBusinessAllowed = () => {
   return usePermissionCheck("isBusinessAllowed", (plan) =>
-    ALLOWED_BUSINESS_PLANS.includes(plan?.plans?.plans?.[0]),
+    hasBusinessPlan(plan?.plans?.plans),
   );
 };
 

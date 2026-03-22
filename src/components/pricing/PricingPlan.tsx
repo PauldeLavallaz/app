@@ -45,7 +45,7 @@ import { Fragment, type JSX, useEffect, useState } from "react";
 import { LoadingIcon } from "../loading-icon";
 import { DefaultFeatureLimits } from "./DefaultFeatureLimits";
 import { UpgradeButton } from "./plan-button";
-import { type Tier, tiersNew, tiersNew_2, tiersOld, tiersOld_2 } from "./tiers";
+import { type Tier, tiersNew } from "./tiers";
 
 type TierFeature = {
   Basic?: string | JSX.Element | boolean | number;
@@ -356,39 +356,11 @@ export function PricingList(props: { trial?: boolean }) {
     }
   }, [_sub, ready]);
 
-  const isOldProPlan = plans.some((plan) =>
-    ["pro", "creator_legacy_monthly"].includes(plan),
-  ); // $20
-  const isOldBusinessPlan = plans.some((plan) =>
-    [
-      "creator",
-      "creator_monthly",
-      "creator_yearly",
-      "deployment",
-      "deployment_yearly",
-      "deployment_monthly",
-    ].includes(plan),
-  ); // $100
   const isNewBusinessPlan = plans.some((plan) =>
     ["business", "business_monthly", "business_yearly"].includes(plan),
   ); // $998
 
-  // isOldBusinessPlan = true;
-
-  let tiers: Tier[] = tiersNew_2;
-  if (isOldProPlan) {
-    tiers = tiersOld;
-  } else if (isOldBusinessPlan) {
-    tiers = tiersOld_2;
-  } else if (isNewBusinessPlan) {
-    tiers = tiersNew;
-  } else if (ready) {
-    tiers = tiersNew;
-  }
-
-  if (targetPlan === "deployment" && ready) {
-    tiers = tiersOld_2;
-  }
+  let tiers: Tier[] = tiersNew;
 
   // isOldProPlan = true;
   // tiers = tiersOld;
@@ -410,22 +382,13 @@ export function PricingList(props: { trial?: boolean }) {
             <select
               className="rounded border px-2 py-1"
               value={
-                isOldProPlan
-                  ? "pro"
-                  : isOldBusinessPlan
-                    ? "creator"
-                    : isNewBusinessPlan
-                      ? "business"
-                      : "basic"
+                isNewBusinessPlan ? "business" : "business"
               }
               onChange={(e) => {
                 const value = e.target.value;
                 setPlans([value]);
               }}
             >
-              <option value="basic">Basic</option>
-              <option value="pro">Pro (Old - $20)</option>
-              <option value="creator">Creator (Old - $100)</option>
               <option value="business">Business (New - $998)</option>
             </select>
           </div>

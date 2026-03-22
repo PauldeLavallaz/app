@@ -38,6 +38,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { WorkflowNavbar } from "@/components/workflow-navbar";
 import { AssetsBrowserPopup } from "@/components/workspace/assets-browser-drawer";
+import { useCurrentPlanWithStatus, hasBusinessPlan } from "@/hooks/use-current-plan";
 import { cn } from "@/lib/utils";
 import { queryClient } from "../lib/providers";
 
@@ -106,6 +107,8 @@ function RootComponent() {
   const auth = useAuth();
 
   const router = useRouter();
+  const navigate = router.navigate;
+  const { data: planStatus, isLoading: isPlanLoading } = useCurrentPlanWithStatus();
   const isFirstRender = useRef(true);
   const currentOrg = useRef(auth.orgId);
 
@@ -117,7 +120,7 @@ function RootComponent() {
 
     currentOrg.current = auth.orgId;
     queryClient.resetQueries();
-  }, [auth.orgId, router]);
+  }, [auth.orgId]);
 
   const { pathname } = useLocation();
   const isWorkflowPage = pathname.includes("/workflows/");
@@ -127,6 +130,37 @@ function RootComponent() {
     }
     return route.wildcard && pathname.startsWith(route.path);
   });
+  const prePlanAllowedRoutes = ["/pricing", "/create-org"];
+  const isPrePlanAllowedRoute = prePlanAllowedRoutes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
+  const hasRequiredPlan = hasBusinessPlan(planStatus?.plans?.plans);
+  const showAppChrome = auth.isSignedIn && !isAuthPage && !isPrePlanAllowedRoute;
+  const shouldHoldProtectedContent =
+    auth.isSignedIn &&
+    !isAuthPage &&
+    !isPrePlanAllowedRoute &&
+    (isPlanLoading || !hasRequiredPlan);
+
+  useEffect(() => {
+    if (!auth.isSignedIn || isPlanLoading || isAuthPage || isPrePlanAllowedRoute) {
+      return;
+    }
+
+    if (!hasRequiredPlan) {
+      navigate({
+        to: "/pricing",
+        search: { ready: true, plan: "business" },
+      });
+    }
+  }, [
+    auth.isSignedIn,
+    hasRequiredPlan,
+    isAuthPage,
+    isPlanLoading,
+    navigate,
+    isPrePlanAllowedRoute,
+  ]);
 
   return (
     <ThemeProvider defaultTheme="system">
@@ -138,15 +172,15 @@ function RootComponent() {
       {isAuthPage && !auth.isSignedIn ? (
         <GuestSidebar />
       ) : (
-        !isWorkflowPage && (
+        showAppChrome && !isWorkflowPage && (
           <SignedIn>
             <AppSidebar />
           </SignedIn>
         )
       )}
       <SignedIn>
-        {isWorkflowPage && <WorkflowNavbar />}
-        {!isWorkflowPage && (
+        {showAppChrome && isWorkflowPage && <WorkflowNavbar />}
+        {showAppChrome && !isWorkflowPage && (
           <div className="fixed top-0 z-50 flex h-[40px] w-full flex-row items-center gap-2 border-gray-200 border-b bg-transparent p-1 md:hidden dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-md">
             <SidebarTrigger className="h-8 w-8 rounded-none border-gray-200 border-r p-2 dark:border-zinc-700" />
             <Link
@@ -165,7 +199,20 @@ function RootComponent() {
         )}
       >
         <SignedIn>
-          <OrgSelectorComponent />
+          {shouldHoldProtectedContent ? (
+            <div className="flex min-h-[calc(100dvh-40px)] w-full items-center justify-center px-6 py-12">
+              <div className="max-w-xl space-y-4 text-center">
+                <h1 className="font-bold text-3xl text-gray-900 dark:text-zinc-100">
+                  Finish billing setup to unlock your workspace
+                </h1>
+                <p className="text-base text-gray-600 dark:text-zinc-400">
+                  Create or select your organization, then choose the Business plan before accessing workflows, machines, and private storage.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <OrgSelectorComponent />
+          )}
         </SignedIn>
         {isAuthPage && <Outlet />}
         {!isAuthPage && (

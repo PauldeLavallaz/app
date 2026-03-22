@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useCustomer } from "autumn-js/react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { useCurrentPlan } from "@/hooks/use-current-plan";
+import { hasBusinessPlan, useCurrentPlan } from "@/hooks/use-current-plan";
 import { useUserSettings } from "@/hooks/use-user-settings";
 import { cn } from "@/lib/utils";
 import { InlineAutoForm } from "./auto-form/auto-form-dialog";
@@ -12,8 +12,8 @@ import { updateUser } from "./user-api";
 
 export function UserSettings() {
   const sub = useCurrentPlan();
-  const freeTier = !sub?.plans?.plans || sub?.plans?.plans.length === 0;
-  const DEFAULT_MAX_SPEND_LIMIT = sub?.plans ? 1000 : 5;
+  const requiresBusinessPlan = !hasBusinessPlan(sub?.plans?.plans);
+  const DEFAULT_MAX_SPEND_LIMIT = hasBusinessPlan(sub?.plans?.plans) ? 1000 : 5;
   const { data: userSettings } = useUserSettings();
 
   // const enableStorage = userSettings?.enable_custom_output_bucket;
@@ -33,13 +33,13 @@ export function UserSettings() {
 
   return (
     <div className={cn("mx-auto w-full max-w-lg py-10")}>
-      {freeTier && (
+      {requiresBusinessPlan && (
         <div className="mb-4 border-yellow-400 border-l-4 bg-yellow-50 p-4 dark:border-yellow-500 dark:bg-yellow-900/50">
           <div className="flex">
             <div className="ml-3">
               <p className="text-sm text-yellow-700 dark:text-yellow-400">
-                Settings are disabled for free tier users. Please upgrade your
-                plan to access these features.
+                Settings are locked until your workspace has an active Business
+                plan.
               </p>
             </div>
           </div>
@@ -48,7 +48,7 @@ export function UserSettings() {
       <InlineAutoForm
         className={cn(
           "w-full",
-          freeTier && "disabled pointer-events-none opacity-50",
+          requiresBusinessPlan && "disabled pointer-events-none opacity-50",
         )}
         buttonTitle="Save"
         formSchema={z.object({
@@ -104,8 +104,8 @@ export function UserSettings() {
         })}
         data={userSettings}
         serverAction={async (data) => {
-          if (!sub?.plans) {
-            toast.error("Settings are disabled for free tier users.");
+          if (!hasBusinessPlan(sub?.plans?.plans)) {
+            toast.error("Settings require an active Business plan.");
             return userSettings;
           }
 
