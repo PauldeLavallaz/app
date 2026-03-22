@@ -595,24 +595,22 @@ function PricingTier({
                   showBusinessUpgradeButton ? "grid-cols-2" : "grid-cols-1",
                 )}
               >
-                <SignedIn>
-                  {showBusinessUpgradeButton && (
-                    <UpgradeButton
-                      plan={`${tier.id}_${isYearly ? "yearly" : "monthly"}`}
-                      href={`/checkout?plan=${tier.id}`}
-                      plans={plans}
-                      className="border-b-0 border-t border-x-0 hover:bg-gray-900 hover:text-white p-6 rounded-none text-gray-900 transition-colors w-full dark:hover:bg-zinc-700 dark:hover:text-zinc-100 dark:text-gray-300"
-                      trial={false}
-                      allowCoupon={true}
-                      data={{
-                        tier: tier.name,
-                        price: isYearly ? tier.priceYearly : tier.priceMonthly,
-                        billing: isYearly ? "yearly" : "monthly",
-                      }}
-                      subscription={_sub?.plans?.autumn_data}
-                    />
-                  )}
-                </SignedIn>
+                {showBusinessUpgradeButton && (
+                  <UpgradeButton
+                    plan={`${tier.id}_${isYearly ? "yearly" : "monthly"}`}
+                    href={`/checkout?plan=${tier.id}`}
+                    plans={plans}
+                    className="border-b-0 border-t border-x-0 hover:bg-gray-900 hover:text-white p-6 rounded-none text-gray-900 transition-colors w-full dark:hover:bg-zinc-700 dark:hover:text-zinc-100 dark:text-gray-300"
+                    trial={false}
+                    allowCoupon={true}
+                    data={{
+                      tier: tier.name,
+                      price: isYearly ? tier.priceYearly : tier.priceMonthly,
+                      billing: isYearly ? "yearly" : "monthly",
+                    }}
+                    subscription={_sub?.plans?.autumn_data}
+                  />
+                )}
                 {/* <Button
                   asChild
                   className="border-b-0 border-t border-x-0 hover:bg-purple-900 hover:text-white p-6 rounded-none text-gray-900 transition-colors w-full dark:hover:bg-purple-900/50 dark:hover:text-zinc-100 dark:text-purple-400"
