@@ -30,7 +30,7 @@
     # This prevents try_files from running before reverse_proxy
     route {
         # API proxy - must come first
-        reverse_proxy /api/* https://prod-staging.api.comfydeploy.com {
+        reverse_proxy /api/* https://api.comfy.impactframes.ai {
             transport http {
                 tls
             }

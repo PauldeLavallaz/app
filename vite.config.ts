@@ -7,6 +7,22 @@ import { defineConfig, loadEnv } from "vite";
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  const runtimeEnv = { ...env, ...process.env };
+
+  const normalizeEnvValue = (value: string | null | undefined) => {
+    if (typeof value !== "string") {
+      return value;
+    }
+
+    if (
+      (value.startsWith("\"") && value.endsWith("\"")) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      return value.slice(1, -1);
+    }
+
+    return value;
+  };
 
   // Define default values for env variables
   const defaultValues = {
@@ -27,7 +43,7 @@ export default defineConfig(({ command, mode }) => {
   const processEnvDefinitions = Object.fromEntries(
     Object.entries(defaultValues).map(([key, defaultValue]) => [
       `process.env.${key}`,
-      JSON.stringify(env[key] || defaultValue),
+      JSON.stringify(normalizeEnvValue(runtimeEnv[key]) || defaultValue),
     ]),
   );
 
