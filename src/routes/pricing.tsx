@@ -1059,7 +1059,7 @@ export function PricingPage() {
             Choose a business plan to activate your workspace
           </h1>
           <p className="leading-8 mt-4 text-lg text-gray-600 dark:text-zinc-400">
-            ComfyDeploy is currently business-plan only. Pick a plan before creating machines, workflows, or private model storage.
+            ComfyDeploy is currently business-plan only. Pick a plan to start checkout and unlock machines, workflows, and private model storage.
           </p>
           {isUnlockingWorkspace && (
             <p className="mt-3 text-sm text-gray-500 dark:text-zinc-400">

@@ -84,6 +84,11 @@ export const Route = createRootRouteWithContext<RootRouteContext>()({
     if (context.clerk?.session && location.pathname === "/") {
       throw redirect({
         to: "/workflows",
+        search: {
+          view: undefined,
+          shared_workflow_id: undefined,
+          shared_slug: undefined,
+        },
       });
     }
   },
@@ -150,7 +155,7 @@ function RootComponent() {
     if (!hasRequiredPlan) {
       navigate({
         to: "/pricing",
-        search: { ready: true, plan: "business" },
+        search: { ready: true, plan: "business", checkout: undefined },
       });
     }
   }, [
@@ -206,7 +211,7 @@ function RootComponent() {
                   Finish billing setup to unlock your workspace
                 </h1>
                 <p className="text-base text-gray-600 dark:text-zinc-400">
-                  Create or select your organization, then choose the Business plan before accessing workflows, machines, and private storage.
+                  Choose the Business plan to unlock workflows, machines, and private storage. You can set up an organization afterward if you need team access.
                 </p>
               </div>
             </div>
