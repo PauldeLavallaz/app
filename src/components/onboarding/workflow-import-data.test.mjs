@@ -4,6 +4,7 @@ import {
   AmbiguousWorkflowCreationError,
   buildWorkflowCreateData,
   parseWorkflowImport,
+  resolveWorkflowJsonUpdate,
   SubmissionLock,
   WorkflowCreationSession,
   WorkflowNavigationError,
@@ -87,6 +88,21 @@ describe("parseWorkflowImport", () => {
       machine_id: "machine-1",
     });
     assert.deepEqual(JSON.parse(requestBody.workflow_json), JSON.parse(text));
+
+    assert.equal(
+      resolveWorkflowJsonUpdate("previous", {
+        importJson: text,
+        workflowJson: "",
+      }),
+      text,
+    );
+  });
+
+  test("still allows an explicit workflow clear without imported JSON", () => {
+    assert.equal(
+      resolveWorkflowJsonUpdate("previous", { workflowJson: "" }),
+      "",
+    );
   });
 
   test("keeps a plain ComfyUI workflow as the workflow body", () => {
@@ -372,7 +388,7 @@ describe("WorkflowCreationSession", () => {
     };
 
     await assert.rejects(session.submit(firstAttempt), /invalid workflow/);
-    session.reset();
+    assert.equal(session.startNewMachineAttempt(), true);
     assert.equal(
       await session.submit({
         ...firstAttempt,
@@ -410,9 +426,55 @@ describe("WorkflowCreationSession", () => {
     };
 
     await assert.rejects(session.submit(options), WorkflowNavigationError);
-    assert.equal(await session.submit(options), "workflow-1");
+    assert.equal(
+      await session.submit({
+        ...options,
+        selectedMachineId: "machine-2",
+        workflowJson: JSON.stringify({ nodes: [{ id: 1 }], links: [] }),
+      }),
+      "workflow-1",
+    );
     assert.equal(workflowRequests, 1);
     assert.equal(navigations, 2);
+  });
+
+  test("cannot reset a confirmed workflow while navigation is active", async () => {
+    const checkpointStore = createMemoryCheckpointStore();
+    const session = new WorkflowCreationSession(checkpointStore);
+    let finishNavigation;
+    let navigationStarted;
+    let workflowRequests = 0;
+    const started = new Promise((resolve) => {
+      navigationStarted = resolve;
+    });
+    const options = {
+      selectedMachineId: "machine-1",
+      workflowName: "Created workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async () => {
+        workflowRequests += 1;
+        return { workflow_id: "workflow-1" };
+      },
+      navigate: async () => {
+        navigationStarted();
+        return new Promise((_resolve, reject) => {
+          finishNavigation = reject;
+        });
+      },
+    };
+
+    const submission = session.submit(options);
+    await started;
+    assert.equal(session.startNewMachineAttempt(), false);
+    assert.equal(session.acknowledgeAmbiguousOutcome(), false);
+    finishNavigation(new Error("router failed"));
+    await assert.rejects(submission, WorkflowNavigationError);
+
+    assert.equal(
+      await session.submit({ ...options, navigate: async () => {} }),
+      "workflow-1",
+    );
+    assert.equal(workflowRequests, 1);
   });
 
   test("reuses a confirmed machine after a page refresh", async () => {
@@ -497,7 +559,7 @@ describe("WorkflowCreationSession", () => {
     assert.equal(workflowRequests, 2);
   });
 
-  test("starts a new request when the workflow payload changes", async () => {
+  test("does not duplicate a confirmed workflow when the form changes", async () => {
     const session = new WorkflowCreationSession();
     const workflowBodies = [];
     const navigations = [];
@@ -527,16 +589,11 @@ describe("WorkflowCreationSession", () => {
         workflowName: "Workflow 2",
         workflowJson: changedWorkflowJson,
       }),
-      "workflow-2",
+      "workflow-1",
     );
 
-    assert.equal(workflowBodies.length, 2);
-    assert.deepEqual(workflowBodies[1], {
-      name: "Workflow 2",
-      workflow_json: changedWorkflowJson,
-      machine_id: "machine-1",
-    });
-    assert.deepEqual(navigations, ["workflow-1", "workflow-2"]);
+    assert.equal(workflowBodies.length, 1);
+    assert.deepEqual(navigations, ["workflow-1", "workflow-1"]);
   });
 
   test("blocks an unsafe retry after an ambiguous machine response", async () => {
@@ -558,9 +615,14 @@ describe("WorkflowCreationSession", () => {
       AmbiguousWorkflowCreationError,
     );
     await assert.rejects(
-      session.submit(options),
+      session.submit({
+        ...options,
+        machineData: { name: "Different machine", gpu: "H100" },
+        workflowJson: JSON.stringify({ nodes: [{ id: 1 }], links: [] }),
+      }),
       AmbiguousWorkflowCreationError,
     );
+    assert.equal(session.startNewMachineAttempt(), false);
     assert.equal(machineRequests, 1);
   });
 
@@ -591,7 +653,7 @@ describe("WorkflowCreationSession", () => {
       session.submit(options),
       AmbiguousWorkflowCreationError,
     );
-    session.reset();
+    assert.equal(session.acknowledgeAmbiguousOutcome(), true);
     assert.equal(
       await new WorkflowCreationSession(checkpointStore).submit(options),
       "workflow-2",
@@ -618,9 +680,14 @@ describe("WorkflowCreationSession", () => {
       AmbiguousWorkflowCreationError,
     );
     await assert.rejects(
-      session.submit(options),
+      session.submit({
+        ...options,
+        selectedMachineId: "machine-2",
+        workflowJson: JSON.stringify({ nodes: [{ id: 1 }], links: [] }),
+      }),
       AmbiguousWorkflowCreationError,
     );
+    assert.equal(session.startNewMachineAttempt(), false);
     assert.equal(workflowRequests, 1);
   });
 

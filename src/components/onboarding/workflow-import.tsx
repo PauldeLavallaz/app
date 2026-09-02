@@ -25,6 +25,7 @@ import {
   AmbiguousWorkflowCreationError,
   type ParsedWorkflowImport,
   parseWorkflowImport,
+  resolveWorkflowJsonUpdate,
   type WorkflowCreationCheckpointStore,
   WorkflowCreationSession,
   WorkflowNavigationError,
@@ -417,17 +418,7 @@ export const useImportWorkflowStore = create<StepValidation>((set, get) => ({
       ...(update as StepValidation),
     } as StepValidation;
 
-    // Only modify workflowJson if the caller provided one of these fields
-    if (Object.hasOwn(update, "workflowJson")) {
-      // use provided workflowJson as-is (may be empty string intentionally)
-    } else if (Object.hasOwn(update, "importJson")) {
-      // keep workflowJson in sync when importJson is explicitly provided
-      // @ts-expect-error - Partial may not include importJson
-      next.workflowJson = update.importJson as string;
-    } else {
-      // Preserve existing workflowJson; do not clobber it on unrelated updates
-      next.workflowJson = current.workflowJson;
-    }
+    next.workflowJson = resolveWorkflowJsonUpdate(current.workflowJson, update);
 
     // Keep machine name derived from workflow name on changes
     next.machineName = generateRandomMachineName(current.workflowName || "");
@@ -503,17 +494,6 @@ export default function WorkflowImport() {
     createWorkflowCreationCheckpointStore(),
   );
   const creationSession = creationSessionRef.current;
-  const previousMachineOptionRef = useRef(validation.machineOption);
-
-  useEffect(() => {
-    if (
-      previousMachineOptionRef.current === "existing" &&
-      validation.machineOption === "new"
-    ) {
-      creationSession.reset();
-    }
-    previousMachineOptionRef.current = validation.machineOption;
-  }, [creationSession, validation.machineOption]);
 
   // Initialize once with latest hashes to seed defaults
   const didInitRef = useRef(false);
@@ -646,14 +626,6 @@ export default function WorkflowImport() {
   }
 
   const handleFinish = () => {
-    if (
-      previousMachineOptionRef.current === "existing" &&
-      validation.machineOption === "new"
-    ) {
-      creationSession.reset();
-      previousMachineOptionRef.current = "new";
-    }
-
     const machineData =
       validation.machineOption === "new"
         ? {
@@ -690,14 +662,12 @@ export default function WorkflowImport() {
               view: "workspace",
             },
           }),
-        isDefinitiveFailure: (error, resource) => {
+        isDefinitiveFailure: (error) => {
           if (!isApiError(error)) return false;
 
-          const definitiveStatuses =
-            resource === "machine"
-              ? [400, 401, 403, 409, 422, 429]
-              : [400, 401, 403, 404, 409, 422, 429];
-          return definitiveStatuses.includes(error.status);
+          return (
+            error.status >= 400 && error.status < 500 && error.status !== 408
+          );
         },
         onStart: () => setIsSubmitting(true),
         onFinish: () => setIsSubmitting(false),
@@ -721,7 +691,7 @@ export default function WorkflowImport() {
             duration: Number.POSITIVE_INFINITY,
             action: {
               label: "I checked",
-              onClick: () => creationSession.reset(),
+              onClick: () => creationSession.acknowledgeAmbiguousOutcome(),
             },
           });
         } else if (error instanceof WorkflowNavigationError) {
@@ -758,7 +728,18 @@ export default function WorkflowImport() {
           >
             <div className="space-y-12">
               <Import />
-              <WorkflowImportSelectedMachine />
+              <WorkflowImportSelectedMachine
+                disabled={isSubmitting}
+                onNewMachineIntent={() => {
+                  const allowed = creationSession.startNewMachineAttempt();
+                  if (!allowed) {
+                    toast.error(
+                      "Resolve the previous creation attempt before starting another machine.",
+                    );
+                  }
+                  return allowed;
+                }}
+              />
               <WorkflowModelCheck />
             </div>
 

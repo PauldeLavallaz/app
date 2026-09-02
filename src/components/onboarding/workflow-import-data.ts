@@ -14,6 +14,18 @@ export interface WorkflowCreateData {
   workflow_json: string;
 }
 
+export function resolveWorkflowJsonUpdate(
+  currentWorkflowJson: string | undefined,
+  update: { importJson?: string; workflowJson?: string },
+): string | undefined {
+  if (Object.hasOwn(update, "workflowJson") && update.workflowJson) {
+    return update.workflowJson;
+  }
+  if (Object.hasOwn(update, "importJson")) return update.importJson;
+  if (Object.hasOwn(update, "workflowJson")) return update.workflowJson;
+  return currentWorkflowJson;
+}
+
 export function buildWorkflowCreateData({
   machineId,
   name,
@@ -47,6 +59,10 @@ export function buildWorkflowCreateData({
 
 export class SubmissionLock {
   private pending = false;
+
+  isPending(): boolean {
+    return this.pending;
+  }
 
   async run<T>(operation: () => Promise<T>): Promise<T | undefined> {
     if (this.pending) return undefined;
@@ -145,8 +161,32 @@ export class WorkflowCreationSession {
     });
   }
 
-  reset(): void {
+  acknowledgeAmbiguousOutcome(): boolean {
+    if (this.submissionLock.isPending()) return false;
+
+    const phase = this.loadCheckpoint()?.phase;
+    if (phase !== "machine-pending" && phase !== "workflow-pending") {
+      return false;
+    }
+
     this.clearCheckpoint();
+    return true;
+  }
+
+  startNewMachineAttempt(): boolean {
+    if (this.submissionLock.isPending()) return false;
+
+    const phase = this.loadCheckpoint()?.phase;
+    if (
+      phase === "machine-pending" ||
+      phase === "workflow-pending" ||
+      phase === "workflow-created"
+    ) {
+      return false;
+    }
+
+    this.clearCheckpoint();
+    return true;
   }
 
   private async submitOnce(options: WorkflowCreationOptions): Promise<string> {
@@ -188,7 +228,6 @@ export class WorkflowCreationSession {
           machineId,
           phase: "machine-created",
         });
-        options.onMachineCreated?.(createdMachineId);
       } catch (error) {
         if (options.isDefinitiveFailure?.(error, "machine")) {
           this.clearCheckpoint();
@@ -197,6 +236,8 @@ export class WorkflowCreationSession {
         if (error instanceof AmbiguousWorkflowCreationError) throw error;
         throw new AmbiguousWorkflowCreationError("machine");
       }
+
+      options.onMachineCreated?.(machineId);
     }
 
     const workflowData = buildWorkflowCreateData({
@@ -232,7 +273,6 @@ export class WorkflowCreationSession {
         workflowFingerprint: identity.workflowFingerprint,
         workflowId: createdWorkflowId,
       });
-      options.onWorkflowCreated?.(createdWorkflowId);
     } catch (error) {
       if (options.isDefinitiveFailure?.(error, "workflow")) {
         if (machineId) {
@@ -256,6 +296,7 @@ export class WorkflowCreationSession {
       throw new AmbiguousWorkflowCreationError("workflow");
     }
 
+    options.onWorkflowCreated?.(workflowId);
     await this.navigate(options, workflowId);
     this.clearStoredCheckpoint();
     return workflowId;
@@ -277,15 +318,23 @@ export class WorkflowCreationSession {
       (options.machineData === undefined &&
         !!checkpoint.machineId &&
         checkpoint.machineId === options.selectedMachineId);
-    const sameWorkflow =
-      checkpoint.workflowFingerprint === identity.workflowFingerprint;
-
     if (checkpoint.phase === "machine-pending") {
-      if (checkpoint.machineFingerprint === identity.machineFingerprint) {
-        throw new AmbiguousWorkflowCreationError("machine");
+      throw new AmbiguousWorkflowCreationError("machine");
+    }
+
+    if (checkpoint.phase === "workflow-pending") {
+      throw new AmbiguousWorkflowCreationError("workflow");
+    }
+
+    if (checkpoint.phase === "workflow-created") {
+      if (!checkpoint.workflowId) {
+        throw new AmbiguousWorkflowCreationError("workflow");
       }
-      this.clearCheckpoint();
-      return {};
+      return {
+        machineFingerprint: checkpoint.machineFingerprint,
+        machineId: checkpoint.machineId,
+        workflowId: checkpoint.workflowId,
+      };
     }
 
     if (checkpoint.phase === "machine-created") {
@@ -299,33 +348,6 @@ export class WorkflowCreationSession {
       return {};
     }
 
-    if (sameMachine && sameWorkflow) {
-      if (checkpoint.phase === "workflow-pending") {
-        throw new AmbiguousWorkflowCreationError("workflow");
-      }
-      if (checkpoint.workflowId) {
-        return {
-          machineFingerprint: checkpoint.machineFingerprint,
-          machineId: checkpoint.machineId,
-          workflowId: checkpoint.workflowId,
-        };
-      }
-    }
-
-    if (sameMachine && checkpoint.machineId) {
-      this.persistCheckpoint({
-        machineFingerprint: checkpoint.machineFingerprint,
-        machineId: checkpoint.machineId,
-        phase: "machine-created",
-        workflowFingerprint: identity.workflowFingerprint,
-      });
-      return {
-        machineFingerprint: checkpoint.machineFingerprint,
-        machineId: checkpoint.machineId,
-      };
-    }
-
-    this.clearCheckpoint();
     return {};
   }
 
