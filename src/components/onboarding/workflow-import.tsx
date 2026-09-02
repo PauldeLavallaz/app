@@ -22,9 +22,10 @@ import type {
   WorkflowDependencies,
 } from "@/components/onboarding/workflow-analyze";
 import {
-  buildWorkflowCreateData,
+  AmbiguousWorkflowCreationError,
   parseWorkflowImport,
-  SubmissionLock,
+  WorkflowCreationSession,
+  WorkflowNavigationError,
 } from "@/components/onboarding/workflow-import-data";
 import type { NodeData } from "@/components/onboarding/workflow-machine-import";
 import {
@@ -48,6 +49,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useCurrentPlan } from "@/hooks/use-current-plan";
 import { api } from "@/lib/api";
+import { isApiError } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
 import { Route } from "@/routes/workflows";
 import { useLatestHashes } from "@/utils/comfydeploy-hash";
@@ -470,7 +472,7 @@ export default function WorkflowImport() {
 
   const validation = useImportWorkflowStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const submissionLockRef = useRef(new SubmissionLock());
+  const creationSessionRef = useRef(new WorkflowCreationSession());
 
   // Initialize once with latest hashes to seed defaults
   const didInitRef = useRef(false);
@@ -507,9 +509,10 @@ export default function WorkflowImport() {
         null,
         2,
       );
+      const { environment, ...importedWorkflowState } =
+        parseWorkflowImport<ImportedWorkflowEnvironment>(workflowJson);
 
       // Extract environment data from shared workflow if it exists
-      const environment = sharedWorkflow.workflow_export.environment;
       const environmentFields: Partial<StepValidation> = {};
 
       if (environment) {
@@ -542,7 +545,7 @@ export default function WorkflowImport() {
       validation.setValidation({
         workflowName: sharedWorkflow.title || validation.workflowName,
         importOption: "import",
-        importJson: workflowJson,
+        ...importedWorkflowState,
         ...environmentFields,
       });
 
@@ -593,100 +596,76 @@ export default function WorkflowImport() {
     );
   }
 
-  const submitWorkflow = async () => {
-    setIsSubmitting(true);
+  const handleFinish = () => {
+    const machineData =
+      validation.machineOption === "new"
+        ? {
+            name: validation.machineName,
+            gpu: validation.gpuType,
+            comfyui_version: validation.comfyUiHash,
+            docker_command_steps: ensureComfyUIDeployInSteps(
+              validation.docker_command_steps,
+              latestHashes,
+            ),
+            python_version: validation.python_version,
+            install_custom_node_with_gpu:
+              validation.install_custom_node_with_gpu,
+            base_docker_image: validation.base_docker_image,
+          }
+        : undefined;
 
-    try {
-      let machineId = validation.selectedMachineId;
-
-      // Create new machine if needed
-      if (validation.machineOption === "new") {
-        const finalDockerSteps = ensureComfyUIDeployInSteps(
-          validation.docker_command_steps,
-          latestHashes,
-        );
-
-        // For free plan, filter to only ComfyUI Deploy nodes
-        // if (isFreePlan && finalDockerSteps?.steps) {
-        //     const filteredSteps = finalDockerSteps.steps.filter((step: any) => {
-        //         if (step.type !== "custom-node") return false;
-        //         const url = step.data?.url?.toLowerCase() || "";
-        //         return url.includes("github.com/bennykok/comfyui-deploy");
-        //     });
-
-        //     finalDockerSteps = {
-        //         ...finalDockerSteps,
-        //         steps: filteredSteps
-        //     };
-        // }
-
-        const machineData: any = {
-          name: validation.machineName,
-          gpu: validation.gpuType,
-          comfyui_version: validation.comfyUiHash,
-          docker_command_steps: finalDockerSteps,
-          python_version: validation.python_version,
-          install_custom_node_with_gpu: validation.install_custom_node_with_gpu,
-          base_docker_image: validation.base_docker_image,
-        };
-
-        const machine = await api({
-          url: "machine/serverless",
-          init: {
-            method: "POST",
-            body: JSON.stringify(machineData),
-          },
-        });
-
-        if (typeof machine?.id !== "string" || !machine.id) {
-          throw new Error("Machine creation did not return an id");
-        }
-
-        const createdMachineId = machine.id;
-        machineId = createdMachineId;
-        validation.setSelectedMachineId(createdMachineId);
-        validation.setMachineOption("existing");
-        toast.success(
-          `Machine "${validation.machineName}" created successfully!`,
-        );
-      }
-
-      const workflowData = buildWorkflowCreateData({
-        name: validation.workflowName || "",
+    void creationSessionRef.current
+      .submit({
+        machineData,
+        selectedMachineId: validation.selectedMachineId,
+        workflowName: validation.workflowName || "",
         workflowJson: validation.workflowJson,
         workflowApi: validation.workflowApi,
-        machineId,
-      });
+        request: api,
+        navigate: (workflowId) =>
+          navigate({
+            to: "/workflows/$workflowId/$view",
+            params: {
+              workflowId,
+              view: "workspace",
+            },
+          }),
+        isDefinitiveFailure: (error, resource) => {
+          if (!isApiError(error)) return false;
 
-      const workflowResult = await api({
-        url: "workflow",
-        init: {
-          method: "POST",
-          body: JSON.stringify(workflowData),
+          const definitiveStatuses =
+            resource === "machine"
+              ? [400, 401, 403, 409, 422, 429]
+              : [400, 401, 403, 404, 409, 422, 429];
+          return definitiveStatuses.includes(error.status);
         },
-      });
-
-      toast.success(
-        `Workflow "${validation.workflowName}" created successfully!`,
-      );
-
-      // Keep the submission lock until the destination has finished loading.
-      await navigate({
-        to: "/workflows/$workflowId/$view",
-        params: {
-          workflowId: workflowResult.workflow_id,
-          view: "workspace",
+        onStart: () => setIsSubmitting(true),
+        onFinish: () => setIsSubmitting(false),
+        onMachineCreated: (machineId) => {
+          validation.setSelectedMachineId(machineId);
+          validation.setMachineOption("existing");
+          toast.success(
+            `Machine "${validation.machineName}" created successfully!`,
+          );
         },
+        onWorkflowCreated: () => {
+          toast.success(
+            `Workflow "${validation.workflowName}" created successfully!`,
+          );
+        },
+      })
+      .catch((error) => {
+        console.error("Error creating workflow:", error);
+        if (
+          error instanceof AmbiguousWorkflowCreationError ||
+          error instanceof WorkflowNavigationError
+        ) {
+          toast.error(error.message);
+        } else {
+          toast.error("Failed to create workflow");
+        }
       });
-    } catch (error) {
-      console.error("Error creating workflow:", error);
-      toast.error("Failed to create workflow");
-    } finally {
-      setIsSubmitting(false);
-    }
   };
-
-  const handleFinish = () => submissionLockRef.current.run(submitWorkflow);
 
   return (
     <div className="relative flex w-full flex-col overflow-hidden">

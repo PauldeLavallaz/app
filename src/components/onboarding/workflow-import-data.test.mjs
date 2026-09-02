@@ -1,9 +1,12 @@
 import { describe, test } from "bun:test";
 import assert from "node:assert/strict";
 import {
+  AmbiguousWorkflowCreationError,
   buildWorkflowCreateData,
   parseWorkflowImport,
   SubmissionLock,
+  WorkflowCreationSession,
+  WorkflowNavigationError,
 } from "./workflow-import-data.ts";
 
 describe("parseWorkflowImport", () => {
@@ -84,6 +87,22 @@ describe("parseWorkflowImport", () => {
     );
   });
 
+  test("accepts an official export without a workflow API or machine", () => {
+    const text = JSON.stringify({
+      nodes: [],
+      links: [],
+      workflow_api: null,
+      environment: {},
+    });
+
+    assert.deepEqual(parseWorkflowImport(text), {
+      environment: undefined,
+      importJson: text,
+      workflowApi: undefined,
+      workflowJson: text,
+    });
+  });
+
   test("rejects an empty workflow body before calling the API", () => {
     assert.throws(
       () =>
@@ -136,5 +155,153 @@ describe("SubmissionLock", () => {
     );
 
     assert.equal(await lock.run(async () => "retried"), "retried");
+  });
+});
+
+describe("WorkflowCreationSession", () => {
+  test("sends one exact machine/workflow sequence for concurrent submits", async () => {
+    const session = new WorkflowCreationSession();
+    const requests = [];
+    const navigations = [];
+    let starts = 0;
+    let finishes = 0;
+    let releaseMachine = () => {
+      throw new Error("machine request was not started");
+    };
+    const workflowJson = JSON.stringify({
+      nodes: [],
+      links: [],
+      environment: { gpu: "A10G" },
+    });
+    const options = {
+      machineData: { name: "Machine 1", gpu: "A10G" },
+      workflowName: "Imported workflow",
+      workflowJson,
+      workflowApi: JSON.stringify({ prompt: {} }),
+      request: async (request) => {
+        requests.push(request);
+        if (request.url === "machine/serverless") {
+          return new Promise((resolve) => {
+            releaseMachine = () => resolve({ id: "machine-1" });
+          });
+        }
+        return { workflow_id: "workflow-1" };
+      },
+      navigate: async (workflowId) => {
+        navigations.push(workflowId);
+      },
+      onStart: () => {
+        starts += 1;
+      },
+      onFinish: () => {
+        finishes += 1;
+      },
+    };
+
+    const firstSubmit = session.submit(options);
+    assert.equal(await session.submit(options), undefined);
+    assert.equal(requests.length, 1);
+
+    releaseMachine();
+    assert.equal(await firstSubmit, "workflow-1");
+
+    assert.equal(starts, 1);
+    assert.equal(finishes, 1);
+    assert.deepEqual(navigations, ["workflow-1"]);
+    assert.deepEqual(
+      requests.map(({ url, init }) => ({
+        url,
+        body: JSON.parse(init.body),
+      })),
+      [
+        {
+          url: "machine/serverless",
+          body: { name: "Machine 1", gpu: "A10G" },
+        },
+        {
+          url: "workflow",
+          body: {
+            name: "Imported workflow",
+            workflow_json: workflowJson,
+            workflow_api: JSON.stringify({ prompt: {} }),
+            machine_id: "machine-1",
+          },
+        },
+      ],
+    );
+  });
+
+  test("reuses a confirmed machine when workflow creation is retried", async () => {
+    const session = new WorkflowCreationSession();
+    let machineRequests = 0;
+    let workflowRequests = 0;
+    const options = {
+      machineData: { name: "Machine 1" },
+      workflowName: "Retry workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async ({ url }) => {
+        if (url === "machine/serverless") {
+          machineRequests += 1;
+          return { id: "machine-1" };
+        }
+
+        workflowRequests += 1;
+        if (workflowRequests === 1) throw new Error("invalid workflow");
+        return { workflow_id: "workflow-1" };
+      },
+      navigate: async () => {},
+      isDefinitiveFailure: (_error, resource) => resource === "workflow",
+    };
+
+    await assert.rejects(session.submit(options), /invalid workflow/);
+    assert.equal(await session.submit(options), "workflow-1");
+    assert.equal(machineRequests, 1);
+    assert.equal(workflowRequests, 2);
+  });
+
+  test("retries only navigation after the workflow was created", async () => {
+    const session = new WorkflowCreationSession();
+    let workflowRequests = 0;
+    let navigations = 0;
+    const options = {
+      selectedMachineId: "machine-1",
+      workflowName: "Created workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async () => {
+        workflowRequests += 1;
+        return { workflow_id: "workflow-1" };
+      },
+      navigate: async () => {
+        navigations += 1;
+        if (navigations === 1) throw new Error("router failed");
+      },
+    };
+
+    await assert.rejects(session.submit(options), WorkflowNavigationError);
+    assert.equal(await session.submit(options), "workflow-1");
+    assert.equal(workflowRequests, 1);
+    assert.equal(navigations, 2);
+  });
+
+  test("blocks an unsafe retry after an ambiguous machine response", async () => {
+    const session = new WorkflowCreationSession();
+    let machineRequests = 0;
+    const options = {
+      machineData: { name: "Machine 1" },
+      workflowName: "Ambiguous workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async () => {
+        machineRequests += 1;
+        throw new Error("network disconnected");
+      },
+      navigate: async () => {},
+    };
+
+    await assert.rejects(session.submit(options), /network disconnected/);
+    await assert.rejects(
+      session.submit(options),
+      AmbiguousWorkflowCreationError,
+    );
+    assert.equal(machineRequests, 1);
   });
 });
