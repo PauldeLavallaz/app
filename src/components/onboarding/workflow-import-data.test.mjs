@@ -477,6 +477,41 @@ describe("WorkflowCreationSession", () => {
     assert.equal(workflowRequests, 1);
   });
 
+  test("cannot acknowledge an ambiguous outcome while its request is active", async () => {
+    const session = new WorkflowCreationSession();
+    let rejectWorkflow;
+    let requestStarted;
+    let workflowRequests = 0;
+    const started = new Promise((resolve) => {
+      requestStarted = resolve;
+    });
+    const options = {
+      selectedMachineId: "machine-1",
+      workflowName: "Pending workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async () => {
+        workflowRequests += 1;
+        if (workflowRequests > 1) return { workflow_id: "workflow-2" };
+        requestStarted();
+        return new Promise((_resolve, reject) => {
+          rejectWorkflow = reject;
+        });
+      },
+      navigate: async () => {},
+    };
+
+    const submission = session.submit(options);
+    await started;
+    assert.equal(session.acknowledgeAmbiguousOutcome(), false);
+    rejectWorkflow(new Error("network disconnected"));
+    await assert.rejects(submission, AmbiguousWorkflowCreationError);
+    await assert.rejects(
+      session.submit(options),
+      AmbiguousWorkflowCreationError,
+    );
+    assert.equal(workflowRequests, 1);
+  });
+
   test("reuses a confirmed machine after a page refresh", async () => {
     const checkpointStore = createMemoryCheckpointStore();
     let machineRequests = 0;
