@@ -87,6 +87,7 @@ interface CreationApiRequest {
 }
 
 export interface WorkflowCreationOptions {
+  isActive?: () => boolean;
   isDefinitiveFailure?: (error: unknown, resource: CreationResource) => boolean;
   machineData?: unknown;
   navigate: (workflowId: string) => Promise<void>;
@@ -114,6 +115,13 @@ export class WorkflowNavigationError extends Error {
   constructor() {
     super("Workflow created, but navigation failed. Try Finish again.");
     this.name = "WorkflowNavigationError";
+  }
+}
+
+export class WorkflowCreationScopeChangedError extends Error {
+  constructor() {
+    super("Workflow creation stopped because the active account changed.");
+    this.name = "WorkflowCreationScopeChangedError";
   }
 }
 
@@ -191,11 +199,12 @@ export class WorkflowCreationSession {
 
   submit(options: WorkflowCreationOptions): Promise<string | undefined> {
     return this.submissionLock.run(async () => {
+      this.assertActive(options);
       options.onStart?.();
       try {
         return await this.submitOnce(options);
       } finally {
-        options.onFinish?.();
+        if (options.isActive?.() !== false) options.onFinish?.();
       }
     });
   }
@@ -217,6 +226,7 @@ export class WorkflowCreationSession {
   }
 
   private async submitOnce(options: WorkflowCreationOptions): Promise<string> {
+    this.assertActive(options);
     const identity = getCreationIdentity(options);
     const preparedAttempt = this.prepareAttempt(identity, options);
 
@@ -231,6 +241,7 @@ export class WorkflowCreationSession {
       preparedAttempt.machineFingerprint || identity.machineFingerprint;
 
     if (!machineId && options.machineData !== undefined) {
+      this.assertActive(options);
       this.persistCheckpoint({
         ...identity,
         phase: "machine-pending",
@@ -264,9 +275,11 @@ export class WorkflowCreationSession {
         throw new AmbiguousWorkflowCreationError("machine");
       }
 
+      this.assertActive(options);
       options.onMachineCreated?.(machineId);
     }
 
+    this.assertActive(options);
     const workflowData = buildWorkflowCreateData({
       name: options.workflowName,
       workflowJson: options.workflowJson,
@@ -323,6 +336,7 @@ export class WorkflowCreationSession {
       throw new AmbiguousWorkflowCreationError("workflow");
     }
 
+    this.assertActive(options);
     options.onWorkflowCreated?.(workflowId);
     await this.navigate(options, workflowId);
     this.clearStoredCheckpoint();
@@ -434,10 +448,19 @@ export class WorkflowCreationSession {
     options: WorkflowCreationOptions,
     workflowId: string,
   ): Promise<void> {
+    this.assertActive(options);
     try {
       await options.navigate(workflowId);
     } catch {
+      this.assertActive(options);
       throw new WorkflowNavigationError();
+    }
+    this.assertActive(options);
+  }
+
+  private assertActive(options: WorkflowCreationOptions): void {
+    if (options.isActive?.() === false) {
+      throw new WorkflowCreationScopeChangedError();
     }
   }
 }

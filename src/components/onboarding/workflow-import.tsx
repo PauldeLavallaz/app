@@ -30,6 +30,7 @@ import {
   parseWorkflowImport,
   resolveWorkflowJsonUpdate,
   WorkflowCreationSession,
+  WorkflowCreationScopeChangedError,
   WorkflowNavigationError,
 } from "@/components/onboarding/workflow-import-data";
 import type { NodeData } from "@/components/onboarding/workflow-machine-import";
@@ -470,6 +471,8 @@ export default function WorkflowImport() {
   const validation = useImportWorkflowStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const authScope = getAuthScopeKey(userId, orgId);
+  const activeScopeRef = useRef<string | null>(authScope);
+  const requestControllersRef = useRef(new Set<AbortController>());
   const creationSessionRef = useRef<{
     authScope: string;
     session: WorkflowCreationSession;
@@ -491,6 +494,17 @@ export default function WorkflowImport() {
     creationSessionRef.current = creationSessionState;
   }
   const creationSession = creationSessionState.session;
+
+  useEffect(() => {
+    activeScopeRef.current = authScope;
+    const requestControllers = requestControllersRef.current;
+
+    return () => {
+      if (activeScopeRef.current === authScope) activeScopeRef.current = null;
+      for (const controller of requestControllers) controller.abort();
+      requestControllers.clear();
+    };
+  }, [authScope]);
 
   // Initialize once with latest hashes to seed defaults
   const didInitRef = useRef(false);
@@ -623,6 +637,11 @@ export default function WorkflowImport() {
   }
 
   const handleFinish = () => {
+    const submissionScope = authScope;
+    const isSubmissionActive = () =>
+      activeScopeRef.current === submissionScope;
+    const requestController = new AbortController();
+    requestControllersRef.current.add(requestController);
     const machineData =
       validation.machineOption === "new"
         ? {
@@ -650,15 +669,31 @@ export default function WorkflowImport() {
         workflowName: validation.workflowName || "",
         workflowJson: validation.workflowJson,
         workflowApi: validation.workflowApi,
-        request: api,
-        navigate: (workflowId) =>
-          navigate({
+        isActive: isSubmissionActive,
+        request: (request) => {
+          if (!isSubmissionActive()) {
+            throw new WorkflowCreationScopeChangedError();
+          }
+          return api({
+            ...request,
+            init: {
+              ...request.init,
+              signal: requestController.signal,
+            },
+          });
+        },
+        navigate: (workflowId) => {
+          if (!isSubmissionActive()) {
+            throw new WorkflowCreationScopeChangedError();
+          }
+          return navigate({
             to: "/workflows/$workflowId/$view",
             params: {
               workflowId,
               view: "workspace",
             },
-          }),
+          });
+        },
         isDefinitiveFailure: (error) => {
           if (!isApiError(error)) return false;
 
@@ -680,6 +715,12 @@ export default function WorkflowImport() {
         },
       })
       .catch((error) => {
+        if (
+          !isSubmissionActive() ||
+          error instanceof WorkflowCreationScopeChangedError
+        ) {
+          return;
+        }
         console.error("Error creating workflow:", error);
         if (error instanceof AmbiguousWorkflowCreationError) {
           toast.error(error.message, {
@@ -698,6 +739,9 @@ export default function WorkflowImport() {
         } else {
           toast.error("Failed to create workflow");
         }
+      })
+      .finally(() => {
+        requestControllersRef.current.delete(requestController);
       });
   };
 

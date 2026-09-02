@@ -8,6 +8,7 @@ import {
   parseWorkflowImport,
   resolveWorkflowJsonUpdate,
   SubmissionLock,
+  WorkflowCreationScopeChangedError,
   WorkflowCreationSession,
   WorkflowNavigationError,
 } from "./workflow-import-data.ts";
@@ -574,6 +575,116 @@ describe("WorkflowCreationSession", () => {
       workflowBodies.map((body) => body.machine_id),
       ["machine-1", "machine-2"],
     );
+  });
+
+  test("stops between resource phases when the authentication scope changes", async () => {
+    const checkpointStore = createMemoryCheckpointStore();
+    let active = true;
+    let finishMachineRequest;
+    let machineRequestStarted;
+    let workflowRequests = 0;
+    let machineCreatedCallbacks = 0;
+    const started = new Promise((resolve) => {
+      machineRequestStarted = resolve;
+    });
+    const options = {
+      machineData: createMachineData("stable-step"),
+      workflowName: "Scoped workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      isActive: () => active,
+      request: async ({ url }) => {
+        if (url === "machine/serverless") {
+          machineRequestStarted();
+          return new Promise((resolve) => {
+            finishMachineRequest = resolve;
+          });
+        }
+        workflowRequests += 1;
+        return { workflow_id: "workflow-1" };
+      },
+      navigate: async () => {},
+      onMachineCreated: () => {
+        machineCreatedCallbacks += 1;
+      },
+    };
+
+    const submission = new WorkflowCreationSession(checkpointStore).submit(
+      options,
+    );
+    await started;
+    active = false;
+    finishMachineRequest({ id: "machine-org-a" });
+    await assert.rejects(submission, WorkflowCreationScopeChangedError);
+
+    assert.equal(workflowRequests, 0);
+    assert.equal(machineCreatedCallbacks, 0);
+    assert.equal(checkpointStore.load().phase, "machine-created");
+
+    active = true;
+    assert.equal(
+      await new WorkflowCreationSession(checkpointStore).submit(options),
+      "workflow-1",
+    );
+    assert.equal(workflowRequests, 1);
+  });
+
+  test("preserves a confirmed workflow without navigating in a new scope", async () => {
+    const checkpointStore = createMemoryCheckpointStore();
+    let active = true;
+    let finishWorkflowRequest;
+    let workflowRequestStarted;
+    let workflowRequests = 0;
+    let workflowCreatedCallbacks = 0;
+    const navigations = [];
+    const started = new Promise((resolve) => {
+      workflowRequestStarted = resolve;
+    });
+    const options = {
+      selectedMachineId: "machine-org-a",
+      workflowName: "Scoped workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      isActive: () => active,
+      request: async () => {
+        workflowRequests += 1;
+        workflowRequestStarted();
+        return new Promise((resolve) => {
+          finishWorkflowRequest = resolve;
+        });
+      },
+      navigate: async (workflowId) => {
+        navigations.push(workflowId);
+      },
+      onWorkflowCreated: () => {
+        workflowCreatedCallbacks += 1;
+      },
+    };
+
+    const submission = new WorkflowCreationSession(checkpointStore).submit(
+      options,
+    );
+    await started;
+    active = false;
+    finishWorkflowRequest({ workflow_id: "workflow-org-a" });
+    await assert.rejects(submission, WorkflowCreationScopeChangedError);
+
+    assert.equal(workflowRequests, 1);
+    assert.equal(workflowCreatedCallbacks, 0);
+    assert.deepEqual(navigations, []);
+    assert.equal(checkpointStore.load().phase, "workflow-created");
+
+    active = true;
+    assert.equal(
+      await new WorkflowCreationSession(checkpointStore).submit({
+        ...options,
+        request: async () => {
+          workflowRequests += 1;
+          return { workflow_id: "duplicate" };
+        },
+      }),
+      "workflow-org-a",
+    );
+    assert.equal(workflowRequests, 1);
+    assert.deepEqual(navigations, ["workflow-org-a"]);
   });
 
   test("requires confirmation before replacing a confirmed machine", async () => {
