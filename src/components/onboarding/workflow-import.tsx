@@ -21,7 +21,11 @@ import type {
   ConflictingNodeInfo,
   WorkflowDependencies,
 } from "@/components/onboarding/workflow-analyze";
-import { parseWorkflowImport } from "@/components/onboarding/workflow-import-data";
+import {
+  buildWorkflowCreateData,
+  parseWorkflowImport,
+  SubmissionLock,
+} from "@/components/onboarding/workflow-import-data";
 import type { NodeData } from "@/components/onboarding/workflow-machine-import";
 import {
   type GpuTypes,
@@ -466,7 +470,7 @@ export default function WorkflowImport() {
 
   const validation = useImportWorkflowStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const isSubmittingRef = useRef(false);
+  const submissionLockRef = useRef(new SubmissionLock());
 
   // Initialize once with latest hashes to seed defaults
   const didInitRef = useRef(false);
@@ -589,10 +593,7 @@ export default function WorkflowImport() {
     );
   }
 
-  const handleFinish = async () => {
-    if (isSubmittingRef.current) return;
-
-    isSubmittingRef.current = true;
+  const submitWorkflow = async () => {
     setIsSubmitting(true);
 
     try {
@@ -637,22 +638,25 @@ export default function WorkflowImport() {
           },
         });
 
-        machineId = machine.id;
+        if (typeof machine?.id !== "string" || !machine.id) {
+          throw new Error("Machine creation did not return an id");
+        }
+
+        const createdMachineId = machine.id;
+        machineId = createdMachineId;
+        validation.setSelectedMachineId(createdMachineId);
+        validation.setMachineOption("existing");
         toast.success(
           `Machine "${validation.machineName}" created successfully!`,
         );
       }
 
-      // Create workflow
-      const workflowData = {
-        name: validation.workflowName,
-        workflow_json:
-          typeof validation.workflowJson === "string"
-            ? validation.workflowJson
-            : JSON.stringify(validation.workflowJson),
-        ...(validation.workflowApi && { workflow_api: validation.workflowApi }),
-        ...(machineId && { machine_id: machineId }),
-      };
+      const workflowData = buildWorkflowCreateData({
+        name: validation.workflowName || "",
+        workflowJson: validation.workflowJson,
+        workflowApi: validation.workflowApi,
+        machineId,
+      });
 
       const workflowResult = await api({
         url: "workflow",
@@ -666,8 +670,8 @@ export default function WorkflowImport() {
         `Workflow "${validation.workflowName}" created successfully!`,
       );
 
-      // Navigate to workflow page
-      navigate({
+      // Keep the submission lock until the destination has finished loading.
+      await navigate({
         to: "/workflows/$workflowId/$view",
         params: {
           workflowId: workflowResult.workflow_id,
@@ -678,10 +682,11 @@ export default function WorkflowImport() {
       console.error("Error creating workflow:", error);
       toast.error("Failed to create workflow");
     } finally {
-      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
+
+  const handleFinish = () => submissionLockRef.current.run(submitWorkflow);
 
   return (
     <div className="relative flex w-full flex-col overflow-hidden">
@@ -1030,15 +1035,13 @@ function ImportView() {
         return;
       }
 
-      const importedWorkflow =
+      const { environment, ...importedWorkflowState } =
         parseWorkflowImport<ImportedWorkflowEnvironment>(text);
-      const environment = importedWorkflow.environment;
 
       if (!environment) {
         const importData = {
           importOption: "import" as const,
-          importJson: importedWorkflow.importJson,
-          workflowJson: importedWorkflow.workflowJson,
+          ...importedWorkflowState,
           hasEnvironment: false,
           workflowApi: undefined,
           importedFileName: fileName || "",
@@ -1067,9 +1070,7 @@ function ImportView() {
 
       const data = {
         importOption: "import" as const,
-        importJson: importedWorkflow.importJson,
-        workflowJson: importedWorkflow.workflowJson,
-        workflowApi: importedWorkflow.workflowApi,
+        ...importedWorkflowState,
         importedFileName: fileName || "",
 
         // Reset dependencies to trigger re-analysis even with environment
