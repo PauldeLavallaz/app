@@ -23,7 +23,9 @@ import type {
 } from "@/components/onboarding/workflow-analyze";
 import {
   AmbiguousWorkflowCreationError,
+  type ParsedWorkflowImport,
   parseWorkflowImport,
+  type WorkflowCreationCheckpointStore,
   WorkflowCreationSession,
   WorkflowNavigationError,
 } from "@/components/onboarding/workflow-import-data";
@@ -164,6 +166,30 @@ interface CustomNodeData {
     };
     commit_url?: string;
     stargazers_count?: number;
+  };
+}
+
+function createWorkflowCreationCheckpointStore():
+  | WorkflowCreationCheckpointStore
+  | undefined {
+  if (typeof window === "undefined") return undefined;
+
+  const key = `comfydeploy:create-workflow:${window.location.pathname}`;
+  return {
+    clear: () => window.sessionStorage.removeItem(key),
+    load: () => {
+      const checkpoint = window.sessionStorage.getItem(key);
+      if (!checkpoint) return undefined;
+
+      try {
+        return JSON.parse(checkpoint);
+      } catch {
+        window.sessionStorage.removeItem(key);
+        return undefined;
+      }
+    },
+    save: (checkpoint) =>
+      window.sessionStorage.setItem(key, JSON.stringify(checkpoint)),
   };
 }
 
@@ -472,7 +498,11 @@ export default function WorkflowImport() {
 
   const validation = useImportWorkflowStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const creationSessionRef = useRef(new WorkflowCreationSession());
+  const creationSessionRef = useRef<WorkflowCreationSession | null>(null);
+  creationSessionRef.current ??= new WorkflowCreationSession(
+    createWorkflowCreationCheckpointStore(),
+  );
+  const creationSession = creationSessionRef.current;
 
   // Initialize once with latest hashes to seed defaults
   const didInitRef = useRef(false);
@@ -509,8 +539,16 @@ export default function WorkflowImport() {
         null,
         2,
       );
-      const { environment, ...importedWorkflowState } =
-        parseWorkflowImport<ImportedWorkflowEnvironment>(workflowJson);
+      let importedWorkflow: ParsedWorkflowImport<ImportedWorkflowEnvironment>;
+      try {
+        importedWorkflow =
+          parseWorkflowImport<ImportedWorkflowEnvironment>(workflowJson);
+      } catch (error) {
+        console.error("Error importing shared workflow:", error);
+        toast.error("This shared workflow is not a valid workflow export");
+        return;
+      }
+      const { environment, ...importedWorkflowState } = importedWorkflow;
 
       // Extract environment data from shared workflow if it exists
       const environmentFields: Partial<StepValidation> = {};
@@ -614,7 +652,7 @@ export default function WorkflowImport() {
           }
         : undefined;
 
-    void creationSessionRef.current
+    void creationSession
       .submit({
         machineData,
         selectedMachineId: validation.selectedMachineId,

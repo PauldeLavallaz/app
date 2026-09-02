@@ -9,6 +9,19 @@ import {
   WorkflowNavigationError,
 } from "./workflow-import-data.ts";
 
+function createMemoryCheckpointStore() {
+  let value;
+  return {
+    clear: () => {
+      value = undefined;
+    },
+    load: () => value,
+    save: (checkpoint) => {
+      value = structuredClone(checkpoint);
+    },
+  };
+}
+
 describe("parseWorkflowImport", () => {
   // Regression: ISSUE-001 — ComfyDeploy exports lost the workflow body on submit.
   // Found by /qa on 2026-09-02.
@@ -269,6 +282,47 @@ describe("WorkflowCreationSession", () => {
     assert.equal(workflowRequests, 2);
   });
 
+  test("honors a changed machine selection on a new attempt", async () => {
+    const session = new WorkflowCreationSession();
+    const workflowBodies = [];
+    let machineRequests = 0;
+    const request = async ({ url, init }) => {
+      if (url === "machine/serverless") {
+        machineRequests += 1;
+        return { id: "machine-1" };
+      }
+
+      const body = JSON.parse(init.body);
+      workflowBodies.push(body);
+      if (workflowBodies.length === 1) throw new Error("invalid workflow");
+      return { workflow_id: "workflow-2" };
+    };
+    const firstAttempt = {
+      machineData: { name: "Machine 1" },
+      workflowName: "Retry workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request,
+      navigate: async () => {},
+      isDefinitiveFailure: (_error, resource) => resource === "workflow",
+    };
+
+    await assert.rejects(session.submit(firstAttempt), /invalid workflow/);
+    assert.equal(
+      await session.submit({
+        ...firstAttempt,
+        machineData: undefined,
+        selectedMachineId: "machine-2",
+      }),
+      "workflow-2",
+    );
+
+    assert.equal(machineRequests, 1);
+    assert.deepEqual(
+      workflowBodies.map((body) => body.machine_id),
+      ["machine-1", "machine-2"],
+    );
+  });
+
   test("retries only navigation after the workflow was created", async () => {
     const session = new WorkflowCreationSession();
     let workflowRequests = 0;
@@ -291,6 +345,123 @@ describe("WorkflowCreationSession", () => {
     assert.equal(await session.submit(options), "workflow-1");
     assert.equal(workflowRequests, 1);
     assert.equal(navigations, 2);
+  });
+
+  test("reuses a confirmed machine after a page refresh", async () => {
+    const checkpointStore = createMemoryCheckpointStore();
+    let machineRequests = 0;
+    let workflowRequests = 0;
+    const workflowJson = JSON.stringify({ nodes: [], links: [] });
+    const firstAttempt = {
+      machineData: { name: "Machine 1", gpu: "A10G" },
+      workflowName: "Workflow 1",
+      workflowJson,
+      request: async ({ url }) => {
+        if (url === "machine/serverless") {
+          machineRequests += 1;
+          return { id: "machine-1" };
+        }
+
+        workflowRequests += 1;
+        if (workflowRequests === 1) throw new Error("invalid workflow");
+        return { workflow_id: "workflow-1" };
+      },
+      navigate: async () => {},
+      isDefinitiveFailure: (_error, resource) => resource === "workflow",
+    };
+
+    await assert.rejects(
+      new WorkflowCreationSession(checkpointStore).submit(firstAttempt),
+      /invalid workflow/,
+    );
+    assert.equal(
+      await new WorkflowCreationSession(checkpointStore).submit({
+        ...firstAttempt,
+        machineData: { name: "Fresh generated machine", gpu: "A10G" },
+        workflowName: "Fresh generated workflow",
+      }),
+      "workflow-1",
+    );
+
+    assert.equal(machineRequests, 1);
+    assert.equal(workflowRequests, 2);
+  });
+
+  test("retries only navigation after a page refresh", async () => {
+    const checkpointStore = createMemoryCheckpointStore();
+    let workflowRequests = 0;
+    let navigations = 0;
+    const workflowJson = JSON.stringify({ nodes: [], links: [] });
+    const firstAttempt = {
+      selectedMachineId: "machine-1",
+      workflowName: "Workflow 1",
+      workflowJson,
+      request: async () => {
+        workflowRequests += 1;
+        return { workflow_id: "workflow-1" };
+      },
+      navigate: async () => {
+        navigations += 1;
+        if (navigations === 1) throw new Error("router failed");
+      },
+    };
+
+    await assert.rejects(
+      new WorkflowCreationSession(checkpointStore).submit(firstAttempt),
+      WorkflowNavigationError,
+    );
+    assert.equal(
+      await new WorkflowCreationSession(checkpointStore).submit({
+        ...firstAttempt,
+        workflowName: "Fresh generated workflow",
+      }),
+      "workflow-1",
+    );
+
+    assert.equal(workflowRequests, 1);
+    assert.equal(navigations, 2);
+  });
+
+  test("starts a new request when the workflow payload changes", async () => {
+    const session = new WorkflowCreationSession();
+    const workflowBodies = [];
+    const navigations = [];
+    const firstAttempt = {
+      selectedMachineId: "machine-1",
+      workflowName: "Workflow 1",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async ({ init }) => {
+        const body = JSON.parse(init.body);
+        workflowBodies.push(body);
+        return { workflow_id: `workflow-${workflowBodies.length}` };
+      },
+      navigate: async (workflowId) => {
+        navigations.push(workflowId);
+        if (navigations.length === 1) throw new Error("router failed");
+      },
+    };
+
+    await assert.rejects(session.submit(firstAttempt), WorkflowNavigationError);
+    const changedWorkflowJson = JSON.stringify({
+      nodes: [{ id: 1 }],
+      links: [],
+    });
+    assert.equal(
+      await session.submit({
+        ...firstAttempt,
+        workflowName: "Workflow 2",
+        workflowJson: changedWorkflowJson,
+      }),
+      "workflow-2",
+    );
+
+    assert.equal(workflowBodies.length, 2);
+    assert.deepEqual(workflowBodies[1], {
+      name: "Workflow 2",
+      workflow_json: changedWorkflowJson,
+      machine_id: "machine-1",
+    });
+    assert.deepEqual(navigations, ["workflow-1", "workflow-2"]);
   });
 
   test("blocks an unsafe retry after an ambiguous machine response", async () => {
@@ -332,6 +503,63 @@ describe("WorkflowCreationSession", () => {
     await assert.rejects(session.submit(options), /network disconnected/);
     await assert.rejects(
       session.submit(options),
+      AmbiguousWorkflowCreationError,
+    );
+    assert.equal(workflowRequests, 1);
+  });
+
+  test("keeps ambiguous machine protection across a page refresh", async () => {
+    const checkpointStore = createMemoryCheckpointStore();
+    let machineRequests = 0;
+    const options = {
+      machineData: { name: "Machine 1" },
+      workflowName: "Ambiguous workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async () => {
+        machineRequests += 1;
+        throw new Error("network disconnected");
+      },
+      navigate: async () => {},
+    };
+
+    await assert.rejects(
+      new WorkflowCreationSession(checkpointStore).submit(options),
+      /network disconnected/,
+    );
+    await assert.rejects(
+      new WorkflowCreationSession(checkpointStore).submit({
+        ...options,
+        machineData: { name: "Machine 2" },
+        workflowName: "Fresh generated name",
+      }),
+      AmbiguousWorkflowCreationError,
+    );
+    assert.equal(machineRequests, 1);
+  });
+
+  test("keeps ambiguous workflow protection across a page refresh", async () => {
+    const checkpointStore = createMemoryCheckpointStore();
+    let workflowRequests = 0;
+    const options = {
+      selectedMachineId: "machine-1",
+      workflowName: "Ambiguous workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async () => {
+        workflowRequests += 1;
+        throw new Error("network disconnected");
+      },
+      navigate: async () => {},
+    };
+
+    await assert.rejects(
+      new WorkflowCreationSession(checkpointStore).submit(options),
+      /network disconnected/,
+    );
+    await assert.rejects(
+      new WorkflowCreationSession(checkpointStore).submit({
+        ...options,
+        workflowName: "Fresh generated name",
+      }),
       AmbiguousWorkflowCreationError,
     );
     assert.equal(workflowRequests, 1);

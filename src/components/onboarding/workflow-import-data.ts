@@ -88,7 +88,7 @@ export interface WorkflowCreationOptions {
 export class AmbiguousWorkflowCreationError extends Error {
   constructor(resource: CreationResource) {
     super(
-      `${resource === "machine" ? "Machine" : "Workflow"} creation may have succeeded. Refresh before retrying.`,
+      `${resource === "machine" ? "Machine" : "Workflow"} creation status is unknown. Check your Machines or Workflows list before starting a new attempt.`,
     );
     this.name = "AmbiguousWorkflowCreationError";
   }
@@ -101,11 +101,38 @@ export class WorkflowNavigationError extends Error {
   }
 }
 
+type WorkflowCreationPhase =
+  | "machine-pending"
+  | "machine-created"
+  | "workflow-pending"
+  | "workflow-created";
+
+export interface WorkflowCreationCheckpoint {
+  machineFingerprint: string;
+  machineId?: string;
+  phase: WorkflowCreationPhase;
+  workflowFingerprint: string;
+  workflowId?: string;
+}
+
+export interface WorkflowCreationCheckpointStore {
+  clear: () => void;
+  load: () => unknown;
+  save: (checkpoint: WorkflowCreationCheckpoint) => void;
+}
+
+interface WorkflowCreationIdentity {
+  machineFingerprint: string;
+  workflowFingerprint: string;
+}
+
 export class WorkflowCreationSession {
-  private machineId?: string;
+  private checkpoint?: WorkflowCreationCheckpoint;
   private readonly submissionLock = new SubmissionLock();
-  private uncertainResource?: CreationResource;
-  private workflowId?: string;
+
+  constructor(
+    private readonly checkpointStore?: WorkflowCreationCheckpointStore,
+  ) {}
 
   submit(options: WorkflowCreationOptions): Promise<string | undefined> {
     return this.submissionLock.run(async () => {
@@ -119,19 +146,24 @@ export class WorkflowCreationSession {
   }
 
   private async submitOnce(options: WorkflowCreationOptions): Promise<string> {
-    if (this.workflowId) {
-      await this.navigate(options, this.workflowId);
-      return this.workflowId;
+    const identity = getCreationIdentity(options);
+    const preparedAttempt = this.prepareAttempt(identity, options);
+
+    if (preparedAttempt.workflowId) {
+      await this.navigate(options, preparedAttempt.workflowId);
+      this.clearStoredCheckpoint();
+      return preparedAttempt.workflowId;
     }
 
-    if (this.uncertainResource) {
-      throw new AmbiguousWorkflowCreationError(this.uncertainResource);
-    }
-
-    let machineId = this.machineId || options.selectedMachineId;
+    let machineId = preparedAttempt.machineId || options.selectedMachineId;
+    let machineFingerprint =
+      preparedAttempt.machineFingerprint || identity.machineFingerprint;
 
     if (!machineId && options.machineData !== undefined) {
-      this.uncertainResource = "machine";
+      this.persistCheckpoint({
+        ...identity,
+        phase: "machine-pending",
+      });
       try {
         const machine = await options.request({
           url: "machine/serverless",
@@ -145,13 +177,17 @@ export class WorkflowCreationSession {
           throw new AmbiguousWorkflowCreationError("machine");
         }
 
-        this.machineId = createdMachineId;
         machineId = createdMachineId;
-        this.uncertainResource = undefined;
+        machineFingerprint = identity.machineFingerprint;
+        this.persistCheckpoint({
+          ...identity,
+          machineId,
+          phase: "machine-created",
+        });
         options.onMachineCreated?.(createdMachineId);
       } catch (error) {
         if (options.isDefinitiveFailure?.(error, "machine")) {
-          this.uncertainResource = undefined;
+          this.clearCheckpoint();
         }
         throw error;
       }
@@ -164,7 +200,12 @@ export class WorkflowCreationSession {
       machineId,
     });
 
-    this.uncertainResource = "workflow";
+    this.persistCheckpoint({
+      machineFingerprint,
+      machineId,
+      phase: "workflow-pending",
+      workflowFingerprint: identity.workflowFingerprint,
+    });
     try {
       const workflow = await options.request({
         url: "workflow",
@@ -178,18 +219,147 @@ export class WorkflowCreationSession {
         throw new AmbiguousWorkflowCreationError("workflow");
       }
 
-      this.workflowId = createdWorkflowId;
-      this.uncertainResource = undefined;
+      this.persistCheckpoint({
+        machineFingerprint,
+        machineId,
+        phase: "workflow-created",
+        workflowFingerprint: identity.workflowFingerprint,
+        workflowId: createdWorkflowId,
+      });
       options.onWorkflowCreated?.(createdWorkflowId);
     } catch (error) {
       if (options.isDefinitiveFailure?.(error, "workflow")) {
-        this.uncertainResource = undefined;
+        if (machineId) {
+          this.persistCheckpoint({
+            machineFingerprint,
+            machineId,
+            phase: "machine-created",
+            workflowFingerprint: identity.workflowFingerprint,
+          });
+        } else {
+          this.clearCheckpoint();
+        }
       }
       throw error;
     }
 
-    await this.navigate(options, this.workflowId);
-    return this.workflowId;
+    const workflowId = this.checkpoint?.workflowId;
+    if (!workflowId) {
+      throw new AmbiguousWorkflowCreationError("workflow");
+    }
+
+    await this.navigate(options, workflowId);
+    this.clearStoredCheckpoint();
+    return workflowId;
+  }
+
+  private prepareAttempt(
+    identity: WorkflowCreationIdentity,
+    options: WorkflowCreationOptions,
+  ): {
+    machineFingerprint?: string;
+    machineId?: string;
+    workflowId?: string;
+  } {
+    const checkpoint = this.loadCheckpoint();
+    if (!checkpoint) return {};
+
+    const sameMachine =
+      checkpoint.machineFingerprint === identity.machineFingerprint ||
+      (options.machineData === undefined &&
+        !!checkpoint.machineId &&
+        checkpoint.machineId === options.selectedMachineId);
+    const sameWorkflow =
+      checkpoint.workflowFingerprint === identity.workflowFingerprint;
+
+    if (checkpoint.phase === "machine-pending") {
+      if (checkpoint.machineFingerprint === identity.machineFingerprint) {
+        throw new AmbiguousWorkflowCreationError("machine");
+      }
+      this.clearCheckpoint();
+      return {};
+    }
+
+    if (checkpoint.phase === "machine-created") {
+      if (sameMachine && checkpoint.machineId) {
+        return {
+          machineFingerprint: checkpoint.machineFingerprint,
+          machineId: checkpoint.machineId,
+        };
+      }
+      this.clearCheckpoint();
+      return {};
+    }
+
+    if (sameMachine && sameWorkflow) {
+      if (checkpoint.phase === "workflow-pending") {
+        throw new AmbiguousWorkflowCreationError("workflow");
+      }
+      if (checkpoint.workflowId) {
+        return {
+          machineFingerprint: checkpoint.machineFingerprint,
+          machineId: checkpoint.machineId,
+          workflowId: checkpoint.workflowId,
+        };
+      }
+    }
+
+    if (sameMachine && checkpoint.machineId) {
+      this.persistCheckpoint({
+        machineFingerprint: checkpoint.machineFingerprint,
+        machineId: checkpoint.machineId,
+        phase: "machine-created",
+        workflowFingerprint: identity.workflowFingerprint,
+      });
+      return {
+        machineFingerprint: checkpoint.machineFingerprint,
+        machineId: checkpoint.machineId,
+      };
+    }
+
+    this.clearCheckpoint();
+    return {};
+  }
+
+  private loadCheckpoint(): WorkflowCreationCheckpoint | undefined {
+    if (this.checkpoint) return this.checkpoint;
+
+    let storedCheckpoint: unknown;
+    try {
+      storedCheckpoint = this.checkpointStore?.load();
+    } catch {
+      this.clearStoredCheckpoint();
+      return undefined;
+    }
+    if (isWorkflowCreationCheckpoint(storedCheckpoint)) {
+      this.checkpoint = storedCheckpoint;
+      return storedCheckpoint;
+    }
+
+    this.clearStoredCheckpoint();
+    return undefined;
+  }
+
+  private persistCheckpoint(checkpoint: WorkflowCreationCheckpoint): void {
+    this.checkpoint = checkpoint;
+    try {
+      this.checkpointStore?.save(checkpoint);
+    } catch {
+      // In-memory protection remains active if browser storage is unavailable.
+    }
+  }
+
+  private clearCheckpoint(): void {
+    this.checkpoint = undefined;
+    this.clearStoredCheckpoint();
+  }
+
+  private clearStoredCheckpoint(): void {
+    try {
+      this.checkpointStore?.clear();
+    } catch {
+      // Browser storage is an extra safety layer, not a submission dependency.
+    }
   }
 
   private async navigate(
@@ -202,6 +372,69 @@ export class WorkflowCreationSession {
       throw new WorkflowNavigationError();
     }
   }
+}
+
+function getCreationIdentity(
+  options: WorkflowCreationOptions,
+): WorkflowCreationIdentity {
+  const machineData =
+    options.machineData &&
+    typeof options.machineData === "object" &&
+    !Array.isArray(options.machineData)
+      ? Object.fromEntries(
+          Object.entries(options.machineData).filter(([key]) => key !== "name"),
+        )
+      : options.machineData;
+
+  return {
+    machineFingerprint: fingerprint(
+      JSON.stringify({
+        machineData,
+        selectedMachineId: options.selectedMachineId,
+      }),
+    ),
+    workflowFingerprint: fingerprint(
+      JSON.stringify({
+        workflowApi: options.workflowApi,
+        workflowJson: options.workflowJson,
+      }),
+    ),
+  };
+}
+
+function fingerprint(value: string): string {
+  let first = 2166136261;
+  let second = 5381;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 16777619);
+    second = Math.imul(second, 33) ^ code;
+  }
+
+  return `${value.length}:${(first >>> 0).toString(36)}:${(second >>> 0).toString(36)}`;
+}
+
+function isWorkflowCreationCheckpoint(
+  value: unknown,
+): value is WorkflowCreationCheckpoint {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+
+  const checkpoint = value as Record<string, unknown>;
+  return (
+    typeof checkpoint.machineFingerprint === "string" &&
+    typeof checkpoint.workflowFingerprint === "string" &&
+    [
+      "machine-pending",
+      "machine-created",
+      "workflow-pending",
+      "workflow-created",
+    ].includes(checkpoint.phase as string) &&
+    (checkpoint.machineId === undefined ||
+      typeof checkpoint.machineId === "string") &&
+    (checkpoint.workflowId === undefined ||
+      typeof checkpoint.workflowId === "string")
+  );
 }
 
 function getResponseId(value: unknown, key: string): string | undefined {
