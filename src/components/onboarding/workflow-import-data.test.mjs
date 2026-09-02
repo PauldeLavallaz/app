@@ -687,6 +687,33 @@ describe("WorkflowCreationSession", () => {
     assert.deepEqual(navigations, ["workflow-org-a"]);
   });
 
+  test("clears a confirmed workflow when successful navigation unmounts creation", async () => {
+    const checkpointStore = createMemoryCheckpointStore();
+    let active = true;
+    let workflowRequests = 0;
+    const session = new WorkflowCreationSession(checkpointStore);
+
+    assert.equal(
+      await session.submit({
+        selectedMachineId: "machine-1",
+        workflowName: "Created workflow",
+        workflowJson: JSON.stringify({ nodes: [], links: [] }),
+        isActive: () => active,
+        request: async () => {
+          workflowRequests += 1;
+          return { workflow_id: "workflow-1" };
+        },
+        navigate: async () => {
+          active = false;
+        },
+      }),
+      "workflow-1",
+    );
+
+    assert.equal(workflowRequests, 1);
+    assert.equal(checkpointStore.load(), undefined);
+  });
+
   test("requires confirmation before replacing a confirmed machine", async () => {
     const checkpointStore = createMemoryCheckpointStore();
     let machineRequests = 0;

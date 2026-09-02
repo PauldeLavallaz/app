@@ -455,7 +455,6 @@ export class WorkflowCreationSession {
       this.assertActive(options);
       throw new WorkflowNavigationError();
     }
-    this.assertActive(options);
   }
 
   private assertActive(options: WorkflowCreationOptions): void {
