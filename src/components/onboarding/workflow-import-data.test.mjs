@@ -466,48 +466,12 @@ describe("WorkflowCreationSession", () => {
     const submission = session.submit(options);
     await started;
     assert.equal(session.startNewMachineAttempt(), false);
-    assert.equal(session.acknowledgeAmbiguousOutcome(), false);
     finishNavigation(new Error("router failed"));
     await assert.rejects(submission, WorkflowNavigationError);
 
     assert.equal(
       await session.submit({ ...options, navigate: async () => {} }),
       "workflow-1",
-    );
-    assert.equal(workflowRequests, 1);
-  });
-
-  test("cannot acknowledge an ambiguous outcome while its request is active", async () => {
-    const session = new WorkflowCreationSession();
-    let rejectWorkflow;
-    let requestStarted;
-    let workflowRequests = 0;
-    const started = new Promise((resolve) => {
-      requestStarted = resolve;
-    });
-    const options = {
-      selectedMachineId: "machine-1",
-      workflowName: "Pending workflow",
-      workflowJson: JSON.stringify({ nodes: [], links: [] }),
-      request: async () => {
-        workflowRequests += 1;
-        if (workflowRequests > 1) return { workflow_id: "workflow-2" };
-        requestStarted();
-        return new Promise((_resolve, reject) => {
-          rejectWorkflow = reject;
-        });
-      },
-      navigate: async () => {},
-    };
-
-    const submission = session.submit(options);
-    await started;
-    assert.equal(session.acknowledgeAmbiguousOutcome(), false);
-    rejectWorkflow(new Error("network disconnected"));
-    await assert.rejects(submission, AmbiguousWorkflowCreationError);
-    await assert.rejects(
-      session.submit(options),
-      AmbiguousWorkflowCreationError,
     );
     assert.equal(workflowRequests, 1);
   });
@@ -542,7 +506,10 @@ describe("WorkflowCreationSession", () => {
     assert.equal(
       await new WorkflowCreationSession(checkpointStore).submit({
         ...firstAttempt,
-        machineData: createMachineData("random-step-b", 101),
+        machineData: {
+          ...createMachineData("random-step-b", 101),
+          gpu: "H100",
+        },
         workflowName: "Fresh generated workflow",
       }),
       "workflow-1",
@@ -661,41 +628,6 @@ describe("WorkflowCreationSession", () => {
     assert.equal(machineRequests, 1);
   });
 
-  test("allows a retry after the user acknowledges an ambiguous response", async () => {
-    const checkpointStore = createMemoryCheckpointStore();
-    const session = new WorkflowCreationSession(checkpointStore);
-    let machineRequests = 0;
-    const options = {
-      machineData: { name: "Machine 1" },
-      workflowName: "Ambiguous workflow",
-      workflowJson: JSON.stringify({ nodes: [], links: [] }),
-      request: async ({ url }) => {
-        if (url === "machine/serverless") {
-          machineRequests += 1;
-          if (machineRequests === 1) throw new Error("network disconnected");
-          return { id: "machine-2" };
-        }
-        return { workflow_id: "workflow-2" };
-      },
-      navigate: async () => {},
-    };
-
-    await assert.rejects(
-      session.submit(options),
-      AmbiguousWorkflowCreationError,
-    );
-    await assert.rejects(
-      session.submit(options),
-      AmbiguousWorkflowCreationError,
-    );
-    assert.equal(session.acknowledgeAmbiguousOutcome(), true);
-    assert.equal(
-      await new WorkflowCreationSession(checkpointStore).submit(options),
-      "workflow-2",
-    );
-    assert.equal(machineRequests, 2);
-  });
-
   test("blocks an unsafe retry after an ambiguous workflow response", async () => {
     const session = new WorkflowCreationSession();
     let workflowRequests = 0;
@@ -779,6 +711,53 @@ describe("WorkflowCreationSession", () => {
         workflowName: "Fresh generated name",
       }),
       AmbiguousWorkflowCreationError,
+    );
+    assert.equal(workflowRequests, 1);
+  });
+
+  test("reconciles a confirmed workflow from an older mounted session", async () => {
+    const checkpointStore = createMemoryCheckpointStore();
+    const firstSession = new WorkflowCreationSession(checkpointStore);
+    const remountedSession = new WorkflowCreationSession(checkpointStore);
+    let finishWorkflowRequest;
+    let requestStarted;
+    let workflowRequests = 0;
+    const started = new Promise((resolve) => {
+      requestStarted = resolve;
+    });
+    const options = {
+      selectedMachineId: "machine-1",
+      workflowName: "Remounted workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async () => {
+        workflowRequests += 1;
+        requestStarted();
+        return new Promise((resolve) => {
+          finishWorkflowRequest = resolve;
+        });
+      },
+      navigate: async () => {
+        throw new Error("old router was unmounted");
+      },
+    };
+
+    const firstSubmission = firstSession.submit(options);
+    await started;
+    await assert.rejects(
+      remountedSession.submit(options),
+      AmbiguousWorkflowCreationError,
+    );
+
+    finishWorkflowRequest({ workflow_id: "workflow-1" });
+    await assert.rejects(firstSubmission, WorkflowNavigationError);
+    assert.equal(
+      await remountedSession.submit({
+        ...options,
+        selectedMachineId: "machine-2",
+        workflowJson: JSON.stringify({ nodes: [{ id: 1 }], links: [] }),
+        navigate: async () => {},
+      }),
+      "workflow-1",
     );
     assert.equal(workflowRequests, 1);
   });

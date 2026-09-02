@@ -104,7 +104,7 @@ export interface WorkflowCreationOptions {
 export class AmbiguousWorkflowCreationError extends Error {
   constructor(resource: CreationResource) {
     super(
-      `${resource === "machine" ? "Machine" : "Workflow"} creation status is unknown. Check your Machines or Workflows list before starting a new attempt.`,
+      `${resource === "machine" ? "Machine" : "Workflow"} creation status is unknown. Check your Machines or Workflows list; if it does not appear, contact support before retrying.`,
     );
     this.name = "AmbiguousWorkflowCreationError";
   }
@@ -161,18 +161,6 @@ export class WorkflowCreationSession {
     });
   }
 
-  acknowledgeAmbiguousOutcome(): boolean {
-    if (this.submissionLock.isPending()) return false;
-
-    const phase = this.loadCheckpoint()?.phase;
-    if (phase !== "machine-pending" && phase !== "workflow-pending") {
-      return false;
-    }
-
-    this.clearCheckpoint();
-    return true;
-  }
-
   startNewMachineAttempt(): boolean {
     if (this.submissionLock.isPending()) return false;
 
@@ -191,7 +179,7 @@ export class WorkflowCreationSession {
 
   private async submitOnce(options: WorkflowCreationOptions): Promise<string> {
     const identity = getCreationIdentity(options);
-    const preparedAttempt = this.prepareAttempt(identity, options);
+    const preparedAttempt = this.prepareAttempt(options);
 
     if (preparedAttempt.workflowId) {
       await this.navigate(options, preparedAttempt.workflowId);
@@ -302,10 +290,7 @@ export class WorkflowCreationSession {
     return workflowId;
   }
 
-  private prepareAttempt(
-    identity: WorkflowCreationIdentity,
-    options: WorkflowCreationOptions,
-  ): {
+  private prepareAttempt(options: WorkflowCreationOptions): {
     machineFingerprint?: string;
     machineId?: string;
     workflowId?: string;
@@ -313,11 +298,10 @@ export class WorkflowCreationSession {
     const checkpoint = this.loadCheckpoint();
     if (!checkpoint) return {};
 
-    const sameMachine =
-      checkpoint.machineFingerprint === identity.machineFingerprint ||
-      (options.machineData === undefined &&
-        !!checkpoint.machineId &&
-        checkpoint.machineId === options.selectedMachineId);
+    const sameSelectedMachine =
+      options.machineData === undefined &&
+      !!checkpoint.machineId &&
+      checkpoint.machineId === options.selectedMachineId;
     if (checkpoint.phase === "machine-pending") {
       throw new AmbiguousWorkflowCreationError("machine");
     }
@@ -338,7 +322,10 @@ export class WorkflowCreationSession {
     }
 
     if (checkpoint.phase === "machine-created") {
-      if (sameMachine && checkpoint.machineId) {
+      if (
+        checkpoint.machineId &&
+        (options.machineData !== undefined || sameSelectedMachine)
+      ) {
         return {
           machineFingerprint: checkpoint.machineFingerprint,
           machineId: checkpoint.machineId,
@@ -352,21 +339,24 @@ export class WorkflowCreationSession {
   }
 
   private loadCheckpoint(): WorkflowCreationCheckpoint | undefined {
-    if (this.checkpoint) return this.checkpoint;
+    if (!this.checkpointStore) return this.checkpoint;
 
     let storedCheckpoint: unknown;
     try {
-      storedCheckpoint = this.checkpointStore?.load();
+      storedCheckpoint = this.checkpointStore.load();
     } catch {
-      this.clearStoredCheckpoint();
-      return undefined;
+      return this.checkpoint;
     }
     if (isWorkflowCreationCheckpoint(storedCheckpoint)) {
       this.checkpoint = storedCheckpoint;
       return storedCheckpoint;
     }
 
-    this.clearStoredCheckpoint();
+    if (storedCheckpoint === undefined || storedCheckpoint === null) {
+      return this.checkpoint;
+    }
+
+    this.clearCheckpoint();
     return undefined;
   }
 

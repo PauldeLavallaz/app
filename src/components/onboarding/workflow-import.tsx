@@ -671,9 +671,7 @@ export default function WorkflowImport() {
         },
         onStart: () => setIsSubmitting(true),
         onFinish: () => setIsSubmitting(false),
-        onMachineCreated: (machineId) => {
-          validation.setSelectedMachineId(machineId);
-          validation.setMachineOption("existing");
+        onMachineCreated: () => {
           toast.success(
             `Machine "${validation.machineName}" created successfully!`,
           );
@@ -689,10 +687,6 @@ export default function WorkflowImport() {
         if (error instanceof AmbiguousWorkflowCreationError) {
           toast.error(error.message, {
             duration: Number.POSITIVE_INFINITY,
-            action: {
-              label: "I checked",
-              onClick: () => creationSession.acknowledgeAmbiguousOutcome(),
-            },
           });
         } else if (error instanceof WorkflowNavigationError) {
           toast.error(error.message);
