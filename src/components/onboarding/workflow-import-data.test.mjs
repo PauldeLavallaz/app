@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   AmbiguousWorkflowCreationError,
   buildWorkflowCreateData,
+  createWorkflowCreationCheckpointStore,
   MachineConfigurationChangedError,
   parseWorkflowImport,
   resolveWorkflowJsonUpdate,
@@ -21,6 +22,15 @@ function createMemoryCheckpointStore() {
     save: (checkpoint) => {
       value = structuredClone(checkpoint);
     },
+  };
+}
+
+function createMemorySessionStorage() {
+  const values = new Map();
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    removeItem: (key) => values.delete(key),
+    setItem: (key, value) => values.set(key, value),
   };
 }
 
@@ -515,6 +525,55 @@ describe("WorkflowCreationSession", () => {
 
     assert.equal(machineRequests, 1);
     assert.equal(workflowRequests, 2);
+  });
+
+  test("isolates confirmed resources between authentication scopes", async () => {
+    const storage = createMemorySessionStorage();
+    const orgAStore = createWorkflowCreationCheckpointStore(
+      storage,
+      "/workflows",
+      "user-1:org-a",
+    );
+    const orgBStore = createWorkflowCreationCheckpointStore(
+      storage,
+      "/workflows",
+      "user-1:org-b",
+    );
+    const workflowBodies = [];
+    let machineRequests = 0;
+    const options = {
+      machineData: createMachineData("random-step-a"),
+      workflowName: "Scoped workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async ({ url, init }) => {
+        if (url === "machine/serverless") {
+          machineRequests += 1;
+          return { id: `machine-${machineRequests}` };
+        }
+
+        workflowBodies.push(JSON.parse(init.body));
+        if (workflowBodies.length === 1) throw new Error("invalid workflow");
+        return { workflow_id: "workflow-org-b" };
+      },
+      navigate: async () => {},
+      isDefinitiveFailure: (_error, resource) => resource === "workflow",
+    };
+
+    await assert.rejects(
+      new WorkflowCreationSession(orgAStore).submit(options),
+      /invalid workflow/,
+    );
+    assert.equal(orgBStore.load(), undefined);
+    assert.equal(
+      await new WorkflowCreationSession(orgBStore).submit(options),
+      "workflow-org-b",
+    );
+
+    assert.equal(machineRequests, 2);
+    assert.deepEqual(
+      workflowBodies.map((body) => body.machine_id),
+      ["machine-1", "machine-2"],
+    );
   });
 
   test("requires confirmation before replacing a confirmed machine", async () => {

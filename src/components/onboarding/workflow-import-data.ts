@@ -146,6 +146,36 @@ export interface WorkflowCreationCheckpointStore {
   save: (checkpoint: WorkflowCreationCheckpoint) => void;
 }
 
+export interface WorkflowCreationCheckpointStorage {
+  getItem: (key: string) => string | null;
+  removeItem: (key: string) => void;
+  setItem: (key: string, value: string) => void;
+}
+
+export function createWorkflowCreationCheckpointStore(
+  storage: WorkflowCreationCheckpointStorage,
+  pathname: string,
+  authScope: string,
+): WorkflowCreationCheckpointStore {
+  const key = `comfydeploy:create-workflow:${encodeURIComponent(authScope)}:${pathname}`;
+
+  return {
+    clear: () => storage.removeItem(key),
+    load: () => {
+      const checkpoint = storage.getItem(key);
+      if (!checkpoint) return undefined;
+
+      try {
+        return JSON.parse(checkpoint);
+      } catch {
+        storage.removeItem(key);
+        return undefined;
+      }
+    },
+    save: (checkpoint) => storage.setItem(key, JSON.stringify(checkpoint)),
+  };
+}
+
 interface WorkflowCreationIdentity {
   machineFingerprint: string;
   workflowFingerprint: string;

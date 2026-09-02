@@ -1,3 +1,4 @@
+import { useAuth } from "@clerk/clerk-react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -23,11 +24,11 @@ import type {
 } from "@/components/onboarding/workflow-analyze";
 import {
   AmbiguousWorkflowCreationError,
+  createWorkflowCreationCheckpointStore,
   MachineConfigurationChangedError,
   type ParsedWorkflowImport,
   parseWorkflowImport,
   resolveWorkflowJsonUpdate,
-  type WorkflowCreationCheckpointStore,
   WorkflowCreationSession,
   WorkflowNavigationError,
 } from "@/components/onboarding/workflow-import-data";
@@ -54,6 +55,7 @@ import { Input } from "@/components/ui/input";
 import { useCurrentPlan } from "@/hooks/use-current-plan";
 import { api } from "@/lib/api";
 import { isApiError } from "@/lib/api-error";
+import { getAuthScopeKey } from "@/lib/auth-scope";
 import { cn } from "@/lib/utils";
 import { Route } from "@/routes/workflows";
 import { useLatestHashes } from "@/utils/comfydeploy-hash";
@@ -168,30 +170,6 @@ interface CustomNodeData {
     };
     commit_url?: string;
     stargazers_count?: number;
-  };
-}
-
-function createWorkflowCreationCheckpointStore():
-  | WorkflowCreationCheckpointStore
-  | undefined {
-  if (typeof window === "undefined") return undefined;
-
-  const key = `comfydeploy:create-workflow:${window.location.pathname}`;
-  return {
-    clear: () => window.sessionStorage.removeItem(key),
-    load: () => {
-      const checkpoint = window.sessionStorage.getItem(key);
-      if (!checkpoint) return undefined;
-
-      try {
-        return JSON.parse(checkpoint);
-      } catch {
-        window.sessionStorage.removeItem(key);
-        return undefined;
-      }
-    },
-    save: (checkpoint) =>
-      window.sessionStorage.setItem(key, JSON.stringify(checkpoint)),
   };
 }
 
@@ -480,6 +458,7 @@ export const useImportWorkflowStore = create<StepValidation>((set, get) => ({
 }));
 
 export default function WorkflowImport() {
+  const { orgId, userId } = useAuth();
   const navigate = useNavigate();
   const { data: latestHashes, isLoading: hashesLoading } = useLatestHashes();
   const sub = useCurrentPlan();
@@ -490,11 +469,28 @@ export default function WorkflowImport() {
 
   const validation = useImportWorkflowStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const creationSessionRef = useRef<WorkflowCreationSession | null>(null);
-  creationSessionRef.current ??= new WorkflowCreationSession(
-    createWorkflowCreationCheckpointStore(),
-  );
-  const creationSession = creationSessionRef.current;
+  const authScope = getAuthScopeKey(userId, orgId);
+  const creationSessionRef = useRef<{
+    authScope: string;
+    session: WorkflowCreationSession;
+  } | null>(null);
+  let creationSessionState = creationSessionRef.current;
+  if (!creationSessionState || creationSessionState.authScope !== authScope) {
+    const checkpointStore =
+      typeof window === "undefined"
+        ? undefined
+        : createWorkflowCreationCheckpointStore(
+            window.sessionStorage,
+            window.location.pathname,
+            authScope,
+          );
+    creationSessionState = {
+      authScope,
+      session: new WorkflowCreationSession(checkpointStore),
+    };
+    creationSessionRef.current = creationSessionState;
+  }
+  const creationSession = creationSessionState.session;
 
   // Initialize once with latest hashes to seed defaults
   const didInitRef = useRef(false);
