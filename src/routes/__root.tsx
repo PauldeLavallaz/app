@@ -39,6 +39,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { WorkflowNavbar } from "@/components/workflow-navbar";
 import { AssetsBrowserPopup } from "@/components/workspace/assets-browser-drawer";
 import { hasBusinessPlan, useCurrentPlanWithStatus } from "@/hooks/use-current-plan";
+import { getAuthScopeKey } from "@/lib/auth-scope";
 import { cn } from "@/lib/utils";
 import { queryClient } from "../lib/providers";
 
@@ -95,14 +96,14 @@ export const Route = createRootRouteWithContext<RootRouteContext>()({
 });
 
 function AutumnProviderComponent() {
-  const auth = useAuth();
+  const { isSignedIn, orgId, userId } = useAuth();
 
-  if (!auth.isSignedIn) {
+  if (!isSignedIn) {
     return <RootComponent />;
   }
 
   return (
-    <AutumnProvider includeCredentials>
+    <AutumnProvider key={getAuthScopeKey(userId, orgId)} includeCredentials>
       <RootComponent />
     </AutumnProvider>
   );
@@ -115,17 +116,24 @@ function RootComponent() {
   const navigate = router.navigate;
   const { data: planStatus, isLoading: isPlanLoading } = useCurrentPlanWithStatus();
   const isFirstRender = useRef(true);
-  const currentOrg = useRef(auth.orgId);
+  const currentAuthScope = useRef(getAuthScopeKey(auth.userId, auth.orgId));
 
   useEffect(() => {
+    const nextAuthScope = getAuthScopeKey(auth.userId, auth.orgId);
+
     if (isFirstRender.current) {
       isFirstRender.current = false;
+      currentAuthScope.current = nextAuthScope;
       return;
     }
 
-    currentOrg.current = auth.orgId;
-    queryClient.resetQueries();
-  }, [auth.orgId, router]);
+    if (currentAuthScope.current === nextAuthScope) {
+      return;
+    }
+
+    currentAuthScope.current = nextAuthScope;
+    queryClient.removeQueries();
+  }, [auth.orgId, auth.userId]);
 
   const { pathname } = useLocation();
   const isWorkflowPage = pathname.includes("/workflows/");
