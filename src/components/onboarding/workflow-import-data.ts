@@ -90,7 +90,7 @@ export interface WorkflowCreationOptions {
   isActive?: () => boolean;
   isDefinitiveFailure?: (error: unknown, resource: CreationResource) => boolean;
   machineData?: unknown;
-  navigate: (workflowId: string) => Promise<void>;
+  navigate: (workflowId: string) => Promise<boolean>;
   onFinish?: () => void;
   onMachineCreated?: (machineId: string) => void;
   onStart?: () => void;
@@ -450,7 +450,8 @@ export class WorkflowCreationSession {
   ): Promise<void> {
     this.assertActive(options);
     try {
-      await options.navigate(workflowId);
+      const navigationCompleted = await options.navigate(workflowId);
+      if (navigationCompleted === false) throw new WorkflowNavigationError();
     } catch {
       this.assertActive(options);
       throw new WorkflowNavigationError();

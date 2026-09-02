@@ -1,6 +1,6 @@
 import { useAuth } from "@clerk/clerk-react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   AlertTriangle,
   Check,
@@ -15,7 +15,13 @@ import {
   Upload,
 } from "lucide-react";
 import { useQueryState } from "nuqs";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { create } from "zustand";
 import type {
@@ -461,6 +467,7 @@ export const useImportWorkflowStore = create<StepValidation>((set, get) => ({
 export default function WorkflowImport() {
   const { orgId, userId } = useAuth();
   const navigate = useNavigate();
+  const router = useRouter();
   const { data: latestHashes, isLoading: hashesLoading } = useLatestHashes();
   const sub = useCurrentPlan();
   const isFreePlan =
@@ -495,7 +502,7 @@ export default function WorkflowImport() {
   }
   const creationSession = creationSessionState.session;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     activeScopeRef.current = authScope;
     const requestControllers = requestControllersRef.current;
 
@@ -682,17 +689,20 @@ export default function WorkflowImport() {
             },
           });
         },
-        navigate: (workflowId) => {
+        navigate: async (workflowId) => {
           if (!isSubmissionActive()) {
             throw new WorkflowCreationScopeChangedError();
           }
-          return navigate({
+          await navigate({
             to: "/workflows/$workflowId/$view",
             params: {
               workflowId,
               view: "workspace",
             },
           });
+          return router.state.location.pathname.endsWith(
+            `/workflows/${workflowId}/workspace`,
+          );
         },
         isDefinitiveFailure: (error) => {
           if (!isApiError(error)) return false;

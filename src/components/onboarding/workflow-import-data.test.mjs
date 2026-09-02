@@ -705,6 +705,7 @@ describe("WorkflowCreationSession", () => {
         },
         navigate: async () => {
           active = false;
+          return true;
         },
       }),
       "workflow-1",
@@ -712,6 +713,31 @@ describe("WorkflowCreationSession", () => {
 
     assert.equal(workflowRequests, 1);
     assert.equal(checkpointStore.load(), undefined);
+  });
+
+  test("preserves a confirmed workflow when navigation is superseded", async () => {
+    const checkpointStore = createMemoryCheckpointStore();
+    let active = true;
+    const session = new WorkflowCreationSession(checkpointStore);
+
+    await assert.rejects(
+      session.submit({
+        selectedMachineId: "machine-1",
+        workflowName: "Created workflow",
+        workflowJson: JSON.stringify({ nodes: [], links: [] }),
+        isActive: () => active,
+        request: async () => ({ workflow_id: "workflow-org-a" }),
+        navigate: async () => {
+          active = false;
+          return false;
+        },
+      }),
+      WorkflowCreationScopeChangedError,
+    );
+
+    assert.equal(checkpointStore.load().phase, "workflow-created");
+    assert.equal(checkpointStore.load().machineId, "machine-1");
+    assert.equal(checkpointStore.load().workflowId, "workflow-org-a");
   });
 
   test("requires confirmation before replacing a confirmed machine", async () => {
