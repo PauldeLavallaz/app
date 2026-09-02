@@ -377,14 +377,7 @@ export class WorkflowCreationSession {
 function getCreationIdentity(
   options: WorkflowCreationOptions,
 ): WorkflowCreationIdentity {
-  const machineData =
-    options.machineData &&
-    typeof options.machineData === "object" &&
-    !Array.isArray(options.machineData)
-      ? Object.fromEntries(
-          Object.entries(options.machineData).filter(([key]) => key !== "name"),
-        )
-      : options.machineData;
+  const machineData = normalizeMachineData(options.machineData);
 
   return {
     machineFingerprint: fingerprint(
@@ -400,6 +393,37 @@ function getCreationIdentity(
       }),
     ),
   };
+}
+
+function normalizeMachineData(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+
+  const machineData = Object.fromEntries(
+    Object.entries(value).filter(([key]) => key !== "name"),
+  );
+  const dockerCommandSteps = machineData.docker_command_steps;
+  if (
+    !dockerCommandSteps ||
+    typeof dockerCommandSteps !== "object" ||
+    Array.isArray(dockerCommandSteps)
+  ) {
+    return machineData;
+  }
+
+  const steps = (dockerCommandSteps as Record<string, unknown>).steps;
+  if (!Array.isArray(steps)) return machineData;
+
+  machineData.docker_command_steps = {
+    ...dockerCommandSteps,
+    steps: steps.map((step) =>
+      step && typeof step === "object" && !Array.isArray(step)
+        ? Object.fromEntries(
+            Object.entries(step).filter(([key]) => key !== "id"),
+          )
+        : step,
+    ),
+  };
+  return machineData;
 }
 
 function fingerprint(value: string): string {

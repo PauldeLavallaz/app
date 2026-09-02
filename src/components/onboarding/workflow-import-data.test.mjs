@@ -22,6 +22,22 @@ function createMemoryCheckpointStore() {
   };
 }
 
+function createMachineData(stepId) {
+  return {
+    name: "Generated machine",
+    gpu: "A10G",
+    docker_command_steps: {
+      steps: [
+        {
+          id: stepId,
+          type: "custom-node",
+          data: { url: "https://github.com/BennyKok/comfyui-deploy" },
+        },
+      ],
+    },
+  };
+}
+
 describe("parseWorkflowImport", () => {
   // Regression: ISSUE-001 — ComfyDeploy exports lost the workflow body on submit.
   // Found by /qa on 2026-09-02.
@@ -333,7 +349,7 @@ describe("WorkflowCreationSession", () => {
       workflowJson: JSON.stringify({ nodes: [], links: [] }),
       request: async () => {
         workflowRequests += 1;
-        return { workflow_id: "workflow-1" };
+        return { workflow_id: `workflow-${workflowRequests}` };
       },
       navigate: async () => {
         navigations += 1;
@@ -353,7 +369,7 @@ describe("WorkflowCreationSession", () => {
     let workflowRequests = 0;
     const workflowJson = JSON.stringify({ nodes: [], links: [] });
     const firstAttempt = {
-      machineData: { name: "Machine 1", gpu: "A10G" },
+      machineData: createMachineData("random-step-a"),
       workflowName: "Workflow 1",
       workflowJson,
       request: async ({ url }) => {
@@ -377,7 +393,7 @@ describe("WorkflowCreationSession", () => {
     assert.equal(
       await new WorkflowCreationSession(checkpointStore).submit({
         ...firstAttempt,
-        machineData: { name: "Fresh generated machine", gpu: "A10G" },
+        machineData: createMachineData("random-step-b"),
         workflowName: "Fresh generated workflow",
       }),
       "workflow-1",
@@ -398,7 +414,7 @@ describe("WorkflowCreationSession", () => {
       workflowJson,
       request: async () => {
         workflowRequests += 1;
-        return { workflow_id: "workflow-1" };
+        return { workflow_id: `workflow-${workflowRequests}` };
       },
       navigate: async () => {
         navigations += 1;
@@ -420,6 +436,13 @@ describe("WorkflowCreationSession", () => {
 
     assert.equal(workflowRequests, 1);
     assert.equal(navigations, 2);
+    assert.equal(checkpointStore.load(), undefined);
+
+    assert.equal(
+      await new WorkflowCreationSession(checkpointStore).submit(firstAttempt),
+      "workflow-2",
+    );
+    assert.equal(workflowRequests, 2);
   });
 
   test("starts a new request when the workflow payload changes", async () => {
@@ -512,7 +535,7 @@ describe("WorkflowCreationSession", () => {
     const checkpointStore = createMemoryCheckpointStore();
     let machineRequests = 0;
     const options = {
-      machineData: { name: "Machine 1" },
+      machineData: createMachineData("random-step-a"),
       workflowName: "Ambiguous workflow",
       workflowJson: JSON.stringify({ nodes: [], links: [] }),
       request: async () => {
@@ -529,7 +552,7 @@ describe("WorkflowCreationSession", () => {
     await assert.rejects(
       new WorkflowCreationSession(checkpointStore).submit({
         ...options,
-        machineData: { name: "Machine 2" },
+        machineData: createMachineData("random-step-b"),
         workflowName: "Fresh generated name",
       }),
       AmbiguousWorkflowCreationError,
