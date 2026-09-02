@@ -6,7 +6,7 @@ import {
   useLocation,
   useRouter,
 } from "@tanstack/react-router";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 
 const TanStackRouterDevtools =
   process.env.NODE_ENV === "production"
@@ -39,7 +39,10 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { WorkflowNavbar } from "@/components/workflow-navbar";
 import { AssetsBrowserPopup } from "@/components/workspace/assets-browser-drawer";
 import { hasBusinessPlan, useCurrentPlanWithStatus } from "@/hooks/use-current-plan";
-import { getAuthScopeKey } from "@/lib/auth-scope";
+import {
+  getAuthScopeKey,
+  reconcileAuthScopeCache,
+} from "@/lib/auth-scope";
 import { cn } from "@/lib/utils";
 import { queryClient } from "../lib/providers";
 
@@ -97,13 +100,26 @@ export const Route = createRootRouteWithContext<RootRouteContext>()({
 
 function AutumnProviderComponent() {
   const { isSignedIn, orgId, userId } = useAuth();
+  const authScope = getAuthScopeKey(userId, orgId);
+  const [readyAuthScope, setReadyAuthScope] = useState(authScope);
+
+  useLayoutEffect(() => {
+    const scopeChanged = reconcileAuthScopeCache(
+      readyAuthScope,
+      authScope,
+      () => queryClient.clear(),
+    );
+    if (scopeChanged) setReadyAuthScope(authScope);
+  }, [authScope, readyAuthScope]);
+
+  if (readyAuthScope !== authScope) return null;
 
   if (!isSignedIn) {
     return <RootComponent />;
   }
 
   return (
-    <AutumnProvider key={getAuthScopeKey(userId, orgId)} includeCredentials>
+    <AutumnProvider key={authScope} includeCredentials>
       <RootComponent />
     </AutumnProvider>
   );
@@ -115,25 +131,6 @@ function RootComponent() {
   const router = useRouter();
   const navigate = router.navigate;
   const { data: planStatus, isLoading: isPlanLoading } = useCurrentPlanWithStatus();
-  const isFirstRender = useRef(true);
-  const currentAuthScope = useRef(getAuthScopeKey(auth.userId, auth.orgId));
-
-  useEffect(() => {
-    const nextAuthScope = getAuthScopeKey(auth.userId, auth.orgId);
-
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      currentAuthScope.current = nextAuthScope;
-      return;
-    }
-
-    if (currentAuthScope.current === nextAuthScope) {
-      return;
-    }
-
-    currentAuthScope.current = nextAuthScope;
-    queryClient.removeQueries();
-  }, [auth.orgId, auth.userId]);
 
   const { pathname } = useLocation();
   const isWorkflowPage = pathname.includes("/workflows/");
