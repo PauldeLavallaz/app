@@ -117,6 +117,15 @@ export class WorkflowNavigationError extends Error {
   }
 }
 
+export class MachineConfigurationChangedError extends Error {
+  constructor() {
+    super(
+      "Machine settings changed after a machine was already created. Confirm the new settings before creating another machine.",
+    );
+    this.name = "MachineConfigurationChangedError";
+  }
+}
+
 type WorkflowCreationPhase =
   | "machine-pending"
   | "machine-created"
@@ -179,7 +188,7 @@ export class WorkflowCreationSession {
 
   private async submitOnce(options: WorkflowCreationOptions): Promise<string> {
     const identity = getCreationIdentity(options);
-    const preparedAttempt = this.prepareAttempt(options);
+    const preparedAttempt = this.prepareAttempt(identity, options);
 
     if (preparedAttempt.workflowId) {
       await this.navigate(options, preparedAttempt.workflowId);
@@ -290,7 +299,10 @@ export class WorkflowCreationSession {
     return workflowId;
   }
 
-  private prepareAttempt(options: WorkflowCreationOptions): {
+  private prepareAttempt(
+    identity: WorkflowCreationIdentity,
+    options: WorkflowCreationOptions,
+  ): {
     machineFingerprint?: string;
     machineId?: string;
     workflowId?: string;
@@ -322,10 +334,16 @@ export class WorkflowCreationSession {
     }
 
     if (checkpoint.phase === "machine-created") {
-      if (
-        checkpoint.machineId &&
-        (options.machineData !== undefined || sameSelectedMachine)
-      ) {
+      if (options.machineData !== undefined && checkpoint.machineId) {
+        if (checkpoint.machineFingerprint !== identity.machineFingerprint) {
+          throw new MachineConfigurationChangedError();
+        }
+        return {
+          machineFingerprint: checkpoint.machineFingerprint,
+          machineId: checkpoint.machineId,
+        };
+      }
+      if (sameSelectedMachine && checkpoint.machineId) {
         return {
           machineFingerprint: checkpoint.machineFingerprint,
           machineId: checkpoint.machineId,

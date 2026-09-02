@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   AmbiguousWorkflowCreationError,
   buildWorkflowCreateData,
+  MachineConfigurationChangedError,
   parseWorkflowImport,
   resolveWorkflowJsonUpdate,
   SubmissionLock,
@@ -506,10 +507,7 @@ describe("WorkflowCreationSession", () => {
     assert.equal(
       await new WorkflowCreationSession(checkpointStore).submit({
         ...firstAttempt,
-        machineData: {
-          ...createMachineData("random-step-b", 101),
-          gpu: "H100",
-        },
+        machineData: createMachineData("random-step-b", 101),
         workflowName: "Fresh generated workflow",
       }),
       "workflow-1",
@@ -517,6 +515,50 @@ describe("WorkflowCreationSession", () => {
 
     assert.equal(machineRequests, 1);
     assert.equal(workflowRequests, 2);
+  });
+
+  test("requires confirmation before replacing a confirmed machine", async () => {
+    const checkpointStore = createMemoryCheckpointStore();
+    let machineRequests = 0;
+    let workflowRequests = 0;
+    const firstAttempt = {
+      machineData: createMachineData("random-step-a"),
+      workflowName: "Workflow 1",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async ({ url }) => {
+        if (url === "machine/serverless") {
+          machineRequests += 1;
+          return { id: `machine-${machineRequests}` };
+        }
+
+        workflowRequests += 1;
+        if (workflowRequests === 1) throw new Error("invalid workflow");
+        return { workflow_id: "workflow-1" };
+      },
+      navigate: async () => {},
+      isDefinitiveFailure: (_error, resource) => resource === "workflow",
+    };
+
+    await assert.rejects(
+      new WorkflowCreationSession(checkpointStore).submit(firstAttempt),
+      /invalid workflow/,
+    );
+    const changedAttempt = {
+      ...firstAttempt,
+      machineData: {
+        ...createMachineData("random-step-b", 101),
+        gpu: "H100",
+      },
+    };
+    const remountedSession = new WorkflowCreationSession(checkpointStore);
+    await assert.rejects(
+      remountedSession.submit(changedAttempt),
+      MachineConfigurationChangedError,
+    );
+    assert.equal(machineRequests, 1);
+    assert.equal(remountedSession.startNewMachineAttempt(), true);
+    assert.equal(await remountedSession.submit(changedAttempt), "workflow-1");
+    assert.equal(machineRequests, 2);
   });
 
   test("retries only navigation after a page refresh", async () => {

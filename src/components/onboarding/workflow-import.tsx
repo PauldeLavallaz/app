@@ -23,6 +23,7 @@ import type {
 } from "@/components/onboarding/workflow-analyze";
 import {
   AmbiguousWorkflowCreationError,
+  MachineConfigurationChangedError,
   type ParsedWorkflowImport,
   parseWorkflowImport,
   resolveWorkflowJsonUpdate,
@@ -687,6 +688,14 @@ export default function WorkflowImport() {
         if (error instanceof AmbiguousWorkflowCreationError) {
           toast.error(error.message, {
             duration: Number.POSITIVE_INFINITY,
+          });
+        } else if (error instanceof MachineConfigurationChangedError) {
+          toast.error(error.message, {
+            duration: Number.POSITIVE_INFINITY,
+            action: {
+              label: "Use new settings",
+              onClick: () => creationSession.startNewMachineAttempt(),
+            },
           });
         } else if (error instanceof WorkflowNavigationError) {
           toast.error(error.message);
