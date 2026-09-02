@@ -145,6 +145,10 @@ export class WorkflowCreationSession {
     });
   }
 
+  reset(): void {
+    this.clearCheckpoint();
+  }
+
   private async submitOnce(options: WorkflowCreationOptions): Promise<string> {
     const identity = getCreationIdentity(options);
     const preparedAttempt = this.prepareAttempt(identity, options);
@@ -188,8 +192,10 @@ export class WorkflowCreationSession {
       } catch (error) {
         if (options.isDefinitiveFailure?.(error, "machine")) {
           this.clearCheckpoint();
+          throw error;
         }
-        throw error;
+        if (error instanceof AmbiguousWorkflowCreationError) throw error;
+        throw new AmbiguousWorkflowCreationError("machine");
       }
     }
 
@@ -239,8 +245,10 @@ export class WorkflowCreationSession {
         } else {
           this.clearCheckpoint();
         }
+        throw error;
       }
-      throw error;
+      if (error instanceof AmbiguousWorkflowCreationError) throw error;
+      throw new AmbiguousWorkflowCreationError("workflow");
     }
 
     const workflowId = this.checkpoint?.workflowId;
@@ -415,15 +423,46 @@ function normalizeMachineData(value: unknown): unknown {
 
   machineData.docker_command_steps = {
     ...dockerCommandSteps,
-    steps: steps.map((step) =>
-      step && typeof step === "object" && !Array.isArray(step)
-        ? Object.fromEntries(
-            Object.entries(step).filter(([key]) => key !== "id"),
-          )
-        : step,
-    ),
+    steps: steps.map(normalizeDockerStep),
   };
   return machineData;
+}
+
+function normalizeDockerStep(step: unknown): unknown {
+  if (!step || typeof step !== "object" || Array.isArray(step)) return step;
+
+  const dockerStep = step as Record<string, unknown>;
+  const data = dockerStep.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return { type: dockerStep.type, data };
+  }
+
+  const record = data as Record<string, unknown>;
+  if (dockerStep.type === "custom-node") {
+    return {
+      type: dockerStep.type,
+      data: {
+        files: record.files,
+        hash: record.hash,
+        install_type: record.install_type,
+        name: record.name,
+        pip: record.pip,
+        url: record.url,
+      },
+    };
+  }
+
+  if (dockerStep.type === "custom-node-manager") {
+    return {
+      type: dockerStep.type,
+      data: {
+        node_id: record.node_id,
+        version: record.version,
+      },
+    };
+  }
+
+  return { type: dockerStep.type, data };
 }
 
 function fingerprint(value: string): string {

@@ -22,7 +22,7 @@ function createMemoryCheckpointStore() {
   };
 }
 
-function createMachineData(stepId) {
+function createMachineData(stepId, stargazersCount = 100) {
   return {
     name: "Generated machine",
     gpu: "A10G",
@@ -31,7 +31,15 @@ function createMachineData(stepId) {
         {
           id: stepId,
           type: "custom-node",
-          data: { url: "https://github.com/BennyKok/comfyui-deploy" },
+          data: {
+            files: [],
+            hash: "stable-hash",
+            install_type: "git-clone",
+            name: "ComfyUI Deploy",
+            pip: [],
+            url: "https://github.com/BennyKok/comfyui-deploy",
+            meta: { stargazers_count: stargazersCount },
+          },
         },
       ],
     },
@@ -339,6 +347,50 @@ describe("WorkflowCreationSession", () => {
     );
   });
 
+  test("honors an explicit request for another new machine", async () => {
+    const session = new WorkflowCreationSession();
+    const workflowBodies = [];
+    let machineRequests = 0;
+    const request = async ({ url, init }) => {
+      if (url === "machine/serverless") {
+        machineRequests += 1;
+        return { id: `machine-${machineRequests}` };
+      }
+
+      const body = JSON.parse(init.body);
+      workflowBodies.push(body);
+      if (workflowBodies.length === 1) throw new Error("invalid workflow");
+      return { workflow_id: "workflow-2" };
+    };
+    const firstAttempt = {
+      machineData: createMachineData("random-step-a", 100),
+      workflowName: "Retry workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request,
+      navigate: async () => {},
+      isDefinitiveFailure: (_error, resource) => resource === "workflow",
+    };
+
+    await assert.rejects(session.submit(firstAttempt), /invalid workflow/);
+    session.reset();
+    assert.equal(
+      await session.submit({
+        ...firstAttempt,
+        machineData: {
+          ...createMachineData("random-step-b", 101),
+          name: "Explicit second machine",
+        },
+      }),
+      "workflow-2",
+    );
+
+    assert.equal(machineRequests, 2);
+    assert.deepEqual(
+      workflowBodies.map((body) => body.machine_id),
+      ["machine-1", "machine-2"],
+    );
+  });
+
   test("retries only navigation after the workflow was created", async () => {
     const session = new WorkflowCreationSession();
     let workflowRequests = 0;
@@ -393,7 +445,7 @@ describe("WorkflowCreationSession", () => {
     assert.equal(
       await new WorkflowCreationSession(checkpointStore).submit({
         ...firstAttempt,
-        machineData: createMachineData("random-step-b"),
+        machineData: createMachineData("random-step-b", 101),
         workflowName: "Fresh generated workflow",
       }),
       "workflow-1",
@@ -501,12 +553,50 @@ describe("WorkflowCreationSession", () => {
       navigate: async () => {},
     };
 
-    await assert.rejects(session.submit(options), /network disconnected/);
+    await assert.rejects(
+      session.submit(options),
+      AmbiguousWorkflowCreationError,
+    );
     await assert.rejects(
       session.submit(options),
       AmbiguousWorkflowCreationError,
     );
     assert.equal(machineRequests, 1);
+  });
+
+  test("allows a retry after the user acknowledges an ambiguous response", async () => {
+    const checkpointStore = createMemoryCheckpointStore();
+    const session = new WorkflowCreationSession(checkpointStore);
+    let machineRequests = 0;
+    const options = {
+      machineData: { name: "Machine 1" },
+      workflowName: "Ambiguous workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async ({ url }) => {
+        if (url === "machine/serverless") {
+          machineRequests += 1;
+          if (machineRequests === 1) throw new Error("network disconnected");
+          return { id: "machine-2" };
+        }
+        return { workflow_id: "workflow-2" };
+      },
+      navigate: async () => {},
+    };
+
+    await assert.rejects(
+      session.submit(options),
+      AmbiguousWorkflowCreationError,
+    );
+    await assert.rejects(
+      session.submit(options),
+      AmbiguousWorkflowCreationError,
+    );
+    session.reset();
+    assert.equal(
+      await new WorkflowCreationSession(checkpointStore).submit(options),
+      "workflow-2",
+    );
+    assert.equal(machineRequests, 2);
   });
 
   test("blocks an unsafe retry after an ambiguous workflow response", async () => {
@@ -523,7 +613,10 @@ describe("WorkflowCreationSession", () => {
       navigate: async () => {},
     };
 
-    await assert.rejects(session.submit(options), /network disconnected/);
+    await assert.rejects(
+      session.submit(options),
+      AmbiguousWorkflowCreationError,
+    );
     await assert.rejects(
       session.submit(options),
       AmbiguousWorkflowCreationError,
@@ -547,12 +640,12 @@ describe("WorkflowCreationSession", () => {
 
     await assert.rejects(
       new WorkflowCreationSession(checkpointStore).submit(options),
-      /network disconnected/,
+      AmbiguousWorkflowCreationError,
     );
     await assert.rejects(
       new WorkflowCreationSession(checkpointStore).submit({
         ...options,
-        machineData: createMachineData("random-step-b"),
+        machineData: createMachineData("random-step-b", 101),
         workflowName: "Fresh generated name",
       }),
       AmbiguousWorkflowCreationError,
@@ -576,7 +669,7 @@ describe("WorkflowCreationSession", () => {
 
     await assert.rejects(
       new WorkflowCreationSession(checkpointStore).submit(options),
-      /network disconnected/,
+      AmbiguousWorkflowCreationError,
     );
     await assert.rejects(
       new WorkflowCreationSession(checkpointStore).submit({

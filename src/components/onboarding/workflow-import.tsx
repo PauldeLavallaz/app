@@ -503,6 +503,17 @@ export default function WorkflowImport() {
     createWorkflowCreationCheckpointStore(),
   );
   const creationSession = creationSessionRef.current;
+  const previousMachineOptionRef = useRef(validation.machineOption);
+
+  useEffect(() => {
+    if (
+      previousMachineOptionRef.current === "existing" &&
+      validation.machineOption === "new"
+    ) {
+      creationSession.reset();
+    }
+    previousMachineOptionRef.current = validation.machineOption;
+  }, [creationSession, validation.machineOption]);
 
   // Initialize once with latest hashes to seed defaults
   const didInitRef = useRef(false);
@@ -635,6 +646,14 @@ export default function WorkflowImport() {
   }
 
   const handleFinish = () => {
+    if (
+      previousMachineOptionRef.current === "existing" &&
+      validation.machineOption === "new"
+    ) {
+      creationSession.reset();
+      previousMachineOptionRef.current = "new";
+    }
+
     const machineData =
       validation.machineOption === "new"
         ? {
@@ -655,7 +674,10 @@ export default function WorkflowImport() {
     void creationSession
       .submit({
         machineData,
-        selectedMachineId: validation.selectedMachineId,
+        selectedMachineId:
+          validation.machineOption === "existing"
+            ? validation.selectedMachineId
+            : undefined,
         workflowName: validation.workflowName || "",
         workflowJson: validation.workflowJson,
         workflowApi: validation.workflowApi,
@@ -694,10 +716,15 @@ export default function WorkflowImport() {
       })
       .catch((error) => {
         console.error("Error creating workflow:", error);
-        if (
-          error instanceof AmbiguousWorkflowCreationError ||
-          error instanceof WorkflowNavigationError
-        ) {
+        if (error instanceof AmbiguousWorkflowCreationError) {
+          toast.error(error.message, {
+            duration: Number.POSITIVE_INFINITY,
+            action: {
+              label: "I checked",
+              onClick: () => creationSession.reset(),
+            },
+          });
+        } else if (error instanceof WorkflowNavigationError) {
           toast.error(error.message);
         } else {
           toast.error("Failed to create workflow");
