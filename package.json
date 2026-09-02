@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test src/components/onboarding/workflow-import-data.test.mjs",
+    "test": "bun test src/components/onboarding/workflow-import-data.test.mjs",
     "dev": "vite --port 3001",
     "build": "vite build",
     "preview": "vite preview",
