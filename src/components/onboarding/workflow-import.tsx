@@ -21,6 +21,7 @@ import type {
   ConflictingNodeInfo,
   WorkflowDependencies,
 } from "@/components/onboarding/workflow-analyze";
+import { parseWorkflowImport } from "@/components/onboarding/workflow-import-data";
 import type { NodeData } from "@/components/onboarding/workflow-machine-import";
 import {
   type GpuTypes,
@@ -123,6 +124,15 @@ export interface StepValidation {
 }
 interface DockerCommandSteps {
   steps: DockerCommandStep[];
+}
+
+interface ImportedWorkflowEnvironment extends Record<string, unknown> {
+  base_docker_image?: string;
+  comfyui_version?: string;
+  docker_command_steps?: DockerCommandSteps;
+  gpu?: GpuTypes;
+  install_custom_node_with_gpu?: boolean;
+  python_version?: string;
 }
 
 interface DockerCommandStep {
@@ -1009,24 +1019,15 @@ function ImportView() {
         return;
       }
 
-      const json = JSON.parse(text);
-
-      // Validate that the JSON contains both 'nodes' and 'links' keys for ComfyUI workflows
-      // unless it has an environment (which means it's a ComfyDeploy export)
-      if (!json.environment && (!json.nodes || !json.links)) {
-        throw new Error(
-          "Invalid workflow format: missing 'nodes' or 'links' keys",
-        );
-      }
-
-      const environment = json.environment;
-      const workflowAPIJson = json.workflow_api;
+      const importedWorkflow =
+        parseWorkflowImport<ImportedWorkflowEnvironment>(text);
+      const environment = importedWorkflow.environment;
 
       if (!environment) {
         const importData = {
           importOption: "import" as const,
-          importJson: text,
-          workflowJson: text,
+          importJson: importedWorkflow.importJson,
+          workflowJson: importedWorkflow.workflowJson,
           hasEnvironment: false,
           workflowApi: undefined,
           importedFileName: fileName || "",
@@ -1055,9 +1056,9 @@ function ImportView() {
 
       const data = {
         importOption: "import" as const,
-        importJson: text,
-        workflowJson: "",
-        workflowApi: JSON.stringify(workflowAPIJson),
+        importJson: importedWorkflow.importJson,
+        workflowJson: importedWorkflow.workflowJson,
+        workflowApi: importedWorkflow.workflowApi,
         importedFileName: fileName || "",
 
         // Reset dependencies to trigger re-analysis even with environment
