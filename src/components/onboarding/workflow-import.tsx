@@ -465,6 +465,8 @@ export default function WorkflowImport() {
   const { shared_slug: sharedSlug } = Route.useSearch();
 
   const validation = useImportWorkflowStore();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   // Initialize once with latest hashes to seed defaults
   const didInitRef = useRef(false);
@@ -588,6 +590,11 @@ export default function WorkflowImport() {
   }
 
   const handleFinish = async () => {
+    if (isSubmittingRef.current) return;
+
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+
     try {
       let machineId = validation.selectedMachineId;
 
@@ -670,6 +677,9 @@ export default function WorkflowImport() {
     } catch (error) {
       console.error("Error creating workflow:", error);
       toast.error("Failed to create workflow");
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -715,6 +725,7 @@ export default function WorkflowImport() {
                   iconPlacement="right"
                   className="flex items-center gap-2 px-8 py-3 drop-shadow-lg"
                   disabled={
+                    isSubmitting ||
                     !validation.workflowName ||
                     (validation.machineOption === "existing" &&
                       !validation.selectedMachineId)
