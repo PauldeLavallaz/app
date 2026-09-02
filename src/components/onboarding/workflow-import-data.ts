@@ -35,6 +35,7 @@ export function buildWorkflowCreateData({
   }
 
   JSON.parse(serializedWorkflow);
+  if (workflowApi) JSON.parse(workflowApi);
 
   return {
     name,

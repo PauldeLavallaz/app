@@ -113,6 +113,16 @@ describe("parseWorkflowImport", () => {
       /Workflow JSON is required/,
     );
   });
+
+  test("rejects an invalid workflow API before calling the API", () => {
+    assert.throws(() =>
+      buildWorkflowCreateData({
+        name: "Broken API workflow",
+        workflowJson: JSON.stringify({ nodes: [], links: [] }),
+        workflowApi: "not-json",
+      }),
+    );
+  });
 });
 
 describe("SubmissionLock", () => {
@@ -303,5 +313,27 @@ describe("WorkflowCreationSession", () => {
       AmbiguousWorkflowCreationError,
     );
     assert.equal(machineRequests, 1);
+  });
+
+  test("blocks an unsafe retry after an ambiguous workflow response", async () => {
+    const session = new WorkflowCreationSession();
+    let workflowRequests = 0;
+    const options = {
+      selectedMachineId: "machine-1",
+      workflowName: "Ambiguous workflow",
+      workflowJson: JSON.stringify({ nodes: [], links: [] }),
+      request: async () => {
+        workflowRequests += 1;
+        throw new Error("network disconnected");
+      },
+      navigate: async () => {},
+    };
+
+    await assert.rejects(session.submit(options), /network disconnected/);
+    await assert.rejects(
+      session.submit(options),
+      AmbiguousWorkflowCreationError,
+    );
+    assert.equal(workflowRequests, 1);
   });
 });
