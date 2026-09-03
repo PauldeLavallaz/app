@@ -286,11 +286,10 @@ export function WorkflowImportSelectedMachine() {
 
   const sub = useCurrentPlan();
   const { data: planStatus } = useCurrentPlanWithStatus();
-  const {
-    limit: machineLimit,
-    isLimited: MACHINE_LIMIT_REACHED,
-  } = getMachineLimits(planStatus, undefined, sub);
-  const isFreePlan = !sub?.plans?.plans?.length || sub?.plans?.plans?.includes("free");
+  const { limit: machineLimit, isLimited: MACHINE_LIMIT_REACHED } =
+    getMachineLimits(planStatus, undefined, sub);
+  const isFreePlan =
+    !sub?.plans?.plans?.length || sub?.plans?.plans?.includes("free");
 
   // Clear machine config when switching between new/existing machine
   const prevMachineOption = React.useRef(validation.machineOption);
@@ -717,7 +716,7 @@ function ExistingMachineDialog({
                             "w-full text-left border rounded-md p-2 transition-all",
                             "hover:border-primary/50 hover:bg-muted/30",
                             isSelected &&
-                            "border-primary bg-primary/10 ring-1 ring-primary/20",
+                              "border-primary bg-primary/10 ring-1 ring-primary/20",
                             !isSelected && "border-border",
                           )}
                         >
@@ -781,15 +780,15 @@ function ExistingMachineDialog({
                                     node.type === "custom-node" ||
                                     node.type === "custom-node-manager",
                                 ).length > 3 && (
-                                    <span className="text-[9px] text-muted-foreground shrink-0">
-                                      +
-                                      {item.docker_command_steps.steps.filter(
-                                        (node: any) =>
-                                          node.type === "custom-node" ||
-                                          node.type === "custom-node-manager",
-                                      ).length - 3}
-                                    </span>
-                                  )}
+                                  <span className="text-[9px] text-muted-foreground shrink-0">
+                                    +
+                                    {item.docker_command_steps.steps.filter(
+                                      (node: any) =>
+                                        node.type === "custom-node" ||
+                                        node.type === "custom-node-manager",
+                                    ).length - 3}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           )}
@@ -984,7 +983,8 @@ function DetectedCustomNodesSection({
   );
   const { data: latestHashes } = useLatestHashes();
   const sub = useCurrentPlan();
-  const isFreePlan = !sub?.plans?.plans?.length || sub?.plans?.plans?.includes("free");
+  const isFreePlan =
+    !sub?.plans?.plans?.length || sub?.plans?.plans?.includes("free");
 
   // Auto-generate machine name and set default GPU if not set
   useEffect(() => {
@@ -1047,7 +1047,7 @@ function DetectedCustomNodesSection({
         (step: any) =>
           step.type === "custom-node" &&
           (step.data as CustomNodeData)?.url?.toLowerCase() ===
-          url.toLowerCase(),
+            url.toLowerCase(),
       );
     },
     [existingMachineSteps],
@@ -1937,8 +1937,9 @@ function AdvanceSettings({ validation }: { validation: StepValidation }) {
           variant={"expandIcon"}
           iconPlacement="right"
           Icon={Settings2}
-          className={`${sub?.plans?.plans ? "" : "cursor-not-allowed opacity-70"
-            }`}
+          className={`${
+            sub?.plans?.plans ? "" : "cursor-not-allowed opacity-70"
+          }`}
           onClick={() => {
             if (sub?.plans?.plans) {
               setOpenAdvanceSettings(true);
@@ -1952,8 +1953,9 @@ function AdvanceSettings({ validation }: { validation: StepValidation }) {
         <Button
           size={"icon"}
           variant={"outline"}
-          className={`${sub?.plans?.plans ? "" : "cursor-not-allowed opacity-70"
-            }`}
+          className={`${
+            sub?.plans?.plans ? "" : "cursor-not-allowed opacity-70"
+          }`}
           onClick={() => {
             if (sub?.plans?.plans) {
               setOpenAdvanceSettings(true);
@@ -2130,9 +2132,9 @@ function NodeListItem({
       className={cn(
         "flex items-center gap-3 rounded-sm border px-3 py-2 hover:bg-gray-50",
         !hasHash &&
-        "bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800",
+          "bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800",
         isUrlDuplicate &&
-        "bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800",
+          "bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800",
       )}
     >
       {checkbox}
