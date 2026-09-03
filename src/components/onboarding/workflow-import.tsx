@@ -1,4 +1,6 @@
-import { useMatchRoute, useNavigate } from "@tanstack/react-router";
+import { useAuth } from "@clerk/clerk-react";
+import { useQuery } from "@tanstack/react-query";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   Check,
   CheckCircle2,
@@ -10,32 +12,39 @@ import {
   MousePointer,
   Plus,
   Upload,
-  AlertCircle,
 } from "lucide-react";
 import { useQueryState } from "nuqs";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { create } from "zustand";
 import type {
   ConflictingNodeInfo,
   WorkflowDependencies,
 } from "@/components/onboarding/workflow-analyze";
+import {
+  AmbiguousWorkflowCreationError,
+  createWorkflowCreationCheckpointStore,
+  MachineConfigurationChangedError,
+  type ParsedWorkflowImport,
+  parseWorkflowImport,
+  resolveWorkflowJsonUpdate,
+  WorkflowCreationScopeChangedError,
+  WorkflowCreationSession,
+  WorkflowNavigationError,
+} from "@/components/onboarding/workflow-import-data";
 import type { NodeData } from "@/components/onboarding/workflow-machine-import";
 import {
-  buildDockerStepsFromNodes,
-  findFirstDuplicateNode,
   type GpuTypes,
-  WorkflowImportCustomNodeSetup,
   WorkflowImportSelectedMachine,
 } from "@/components/onboarding/workflow-machine-import";
 import { WorkflowModelCheck } from "@/components/onboarding/workflow-model-check";
 import {
-  type Step,
-  type StepComponentProps,
-  StepForm,
-} from "@/components/step-form";
-import {
-  Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
@@ -47,13 +56,14 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { useCurrentPlan } from "@/hooks/use-current-plan";
 import { api } from "@/lib/api";
 import { isApiError } from "@/lib/api-error";
+import { getAuthScopeKey } from "@/lib/auth-scope";
 import { cn } from "@/lib/utils";
+import { Route } from "@/routes/workflows";
 import { useLatestHashes } from "@/utils/comfydeploy-hash";
 import { defaultWorkflowTemplates } from "@/utils/default-workflow";
 import {
@@ -61,11 +71,6 @@ import {
   isPNGFile,
 } from "@/utils/png-metadata-extractor";
 import { FileURLRender } from "../workflows/OutputRender";
-import { useCurrentPlan } from "@/hooks/use-current-plan";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useQuery } from "@tanstack/react-query";
-import { Route } from "@/routes/workflows";
-import { buildImportedWorkflowPatch } from "./workflow-import-utils";
 
 // Add these interfaces
 export interface StepValidation {
@@ -135,6 +140,15 @@ export interface StepValidation {
 }
 interface DockerCommandSteps {
   steps: DockerCommandStep[];
+}
+
+interface ImportedWorkflowEnvironment extends Record<string, unknown> {
+  base_docker_image?: string;
+  comfyui_version?: string;
+  docker_command_steps?: DockerCommandSteps;
+  gpu?: GpuTypes;
+  install_custom_node_with_gpu?: boolean;
+  python_version?: string;
 }
 
 interface DockerCommandStep {
@@ -387,17 +401,7 @@ export const useImportWorkflowStore = create<StepValidation>((set, get) => ({
       ...(update as StepValidation),
     } as StepValidation;
 
-    // Only modify workflowJson if the caller provided one of these fields
-    if (Object.prototype.hasOwnProperty.call(update, "workflowJson")) {
-      // use provided workflowJson as-is (may be empty string intentionally)
-    } else if (Object.prototype.hasOwnProperty.call(update, "importJson")) {
-      // keep workflowJson in sync when importJson is explicitly provided
-      // @ts-ignore - Partial may not include importJson
-      next.workflowJson = update.importJson as string;
-    } else {
-      // Preserve existing workflowJson; do not clobber it on unrelated updates
-      next.workflowJson = current.workflowJson;
-    }
+    next.workflowJson = resolveWorkflowJsonUpdate(current.workflowJson, update);
 
     // Keep machine name derived from workflow name on changes
     next.machineName = generateRandomMachineName(current.workflowName || "");
@@ -458,7 +462,9 @@ export const useImportWorkflowStore = create<StepValidation>((set, get) => ({
 }));
 
 export default function WorkflowImport() {
+  const { orgId, userId } = useAuth();
   const navigate = useNavigate();
+  const router = useRouter();
   const { data: latestHashes, isLoading: hashesLoading } = useLatestHashes();
   const sub = useCurrentPlan();
   const isFreePlan =
@@ -467,6 +473,42 @@ export default function WorkflowImport() {
   const { shared_slug: sharedSlug } = Route.useSearch();
 
   const validation = useImportWorkflowStore();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const authScope = getAuthScopeKey(userId, orgId);
+  const activeScopeRef = useRef<string | null>(authScope);
+  const requestControllersRef = useRef(new Set<AbortController>());
+  const creationSessionRef = useRef<{
+    authScope: string;
+    session: WorkflowCreationSession;
+  } | null>(null);
+  let creationSessionState = creationSessionRef.current;
+  if (!creationSessionState || creationSessionState.authScope !== authScope) {
+    const checkpointStore =
+      typeof window === "undefined"
+        ? undefined
+        : createWorkflowCreationCheckpointStore(
+            window.sessionStorage,
+            window.location.pathname,
+            authScope,
+          );
+    creationSessionState = {
+      authScope,
+      session: new WorkflowCreationSession(checkpointStore),
+    };
+    creationSessionRef.current = creationSessionState;
+  }
+  const creationSession = creationSessionState.session;
+
+  useLayoutEffect(() => {
+    activeScopeRef.current = authScope;
+    const requestControllers = requestControllersRef.current;
+
+    return () => {
+      if (activeScopeRef.current === authScope) activeScopeRef.current = null;
+      for (const controller of requestControllers) controller.abort();
+      requestControllers.clear();
+    };
+  }, [authScope]);
 
   // Initialize once with latest hashes to seed defaults
   const didInitRef = useRef(false);
@@ -503,42 +545,43 @@ export default function WorkflowImport() {
         null,
         2,
       );
+      let importedWorkflow: ParsedWorkflowImport<ImportedWorkflowEnvironment>;
+      try {
+        importedWorkflow =
+          parseWorkflowImport<ImportedWorkflowEnvironment>(workflowJson);
+      } catch (error) {
+        console.error("Error importing shared workflow:", error);
+        toast.error("This shared workflow is not a valid workflow export");
+        return;
+      }
+      const { environment, ...importedWorkflowState } = importedWorkflow;
 
       // Extract environment data from shared workflow if it exists
-      const environment = sharedWorkflow.workflow_export.environment;
       const environmentFields: Partial<StepValidation> = {};
 
       if (environment) {
-        // Map environment fields to validation state
-        if (environment.comfyui_version) {
-          environmentFields.comfyUiHash = environment.comfyui_version;
-          environmentFields.selectedComfyOption = "custom";
-        }
-        if (environment.gpu) {
-          environmentFields.gpuType = environment.gpu;
-        }
-        if (environment.python_version) {
-          environmentFields.python_version = environment.python_version;
-        }
-        if (environment.base_docker_image) {
-          environmentFields.base_docker_image = environment.base_docker_image;
-        }
-        if (environment.install_custom_node_with_gpu !== undefined) {
-          environmentFields.install_custom_node_with_gpu =
-            environment.install_custom_node_with_gpu;
-        }
-        if (environment.docker_command_steps) {
-          environmentFields.docker_command_steps =
-            environment.docker_command_steps;
-        }
-
+        // Keep Morfeo's safe defaults when exports contain a partial environment.
+        environmentFields.comfyUiHash =
+          environment.comfyui_version ||
+          latestHashes?.comfyui_hash ||
+          "158419f3a0017c2ce123484b14b6c527716d6ec8";
+        environmentFields.selectedComfyOption = environment.comfyui_version
+          ? "custom"
+          : "recommended";
+        environmentFields.gpuType = environment.gpu || "A10G";
+        environmentFields.python_version = environment.python_version || "3.11";
+        environmentFields.base_docker_image = environment.base_docker_image;
+        environmentFields.install_custom_node_with_gpu =
+          environment.install_custom_node_with_gpu ?? false;
+        environmentFields.docker_command_steps =
+          environment.docker_command_steps;
         environmentFields.hasEnvironment = true;
       }
 
       validation.setValidation({
         workflowName: sharedWorkflow.title || validation.workflowName,
         importOption: "import",
-        importJson: workflowJson,
+        ...importedWorkflowState,
         ...environmentFields,
       });
 
@@ -589,106 +632,136 @@ export default function WorkflowImport() {
     );
   }
 
-  const handleFinish = async () => {
-    try {
-      let machineId = validation.selectedMachineId;
-      const workflowJson =
-        validation.workflowJson?.trim() || validation.importJson?.trim() || "";
+  const handleFinish = () => {
+    const submissionScope = authScope;
+    const isSubmissionActive = () => activeScopeRef.current === submissionScope;
+    const requestController = new AbortController();
+    requestControllersRef.current.add(requestController);
+    const machineData =
+      validation.machineOption === "new"
+        ? {
+            name: validation.machineName,
+            gpu: validation.gpuType,
+            comfyui_version: validation.comfyUiHash,
+            docker_command_steps: ensureComfyUIDeployInSteps(
+              validation.docker_command_steps,
+              latestHashes,
+            ),
+            python_version: validation.python_version,
+            install_custom_node_with_gpu:
+              validation.install_custom_node_with_gpu,
+            base_docker_image: validation.base_docker_image,
+          }
+        : undefined;
 
-      if (!workflowJson) {
-        toast.error("Workflow JSON is missing");
-        return;
-      }
-
-      // Create new machine if needed
-      if (validation.machineOption === "new") {
-        let finalDockerSteps = ensureComfyUIDeployInSteps(
-          validation.docker_command_steps,
-          latestHashes,
-        );
-
-        // For free plan, filter to only ComfyUI Deploy nodes
-        // if (isFreePlan && finalDockerSteps?.steps) {
-        //     const filteredSteps = finalDockerSteps.steps.filter((step: any) => {
-        //         if (step.type !== "custom-node") return false;
-        //         const url = step.data?.url?.toLowerCase() || "";
-        //         return url.includes("github.com/bennykok/comfyui-deploy");
-        //     });
-
-        //     finalDockerSteps = {
-        //         ...finalDockerSteps,
-        //         steps: filteredSteps
-        //     };
-        // }
-
-        const machineData: any = {
-          name: validation.machineName,
-          gpu: validation.gpuType,
-          comfyui_version: validation.comfyUiHash,
-          docker_command_steps: finalDockerSteps,
-          python_version: validation.python_version,
-          install_custom_node_with_gpu: validation.install_custom_node_with_gpu,
-          base_docker_image: validation.base_docker_image,
-        };
-
-        const machine = await api({
-          url: "machine/serverless",
-          init: {
-            method: "POST",
-            body: JSON.stringify(machineData),
-          },
-        });
-
-        machineId = machine.id;
-        toast.success(
-          `Machine "${validation.machineName}" created successfully!`,
-        );
-      }
-
-      // Create workflow
-      const workflowData = {
-        name: validation.workflowName,
-        workflow_json: workflowJson,
-        ...(validation.workflowApi && { workflow_api: validation.workflowApi }),
-        ...(machineId && { machine_id: machineId }),
-      };
-
-      const workflowResult = await api({
-        url: "workflow",
-        init: {
-          method: "POST",
-          body: JSON.stringify(workflowData),
+    void creationSession
+      .submit({
+        machineData,
+        selectedMachineId:
+          validation.machineOption === "existing"
+            ? validation.selectedMachineId
+            : undefined,
+        workflowName: validation.workflowName || "",
+        workflowJson:
+          validation.workflowJson?.trim() ||
+          validation.importJson?.trim() ||
+          "",
+        workflowApi: validation.workflowApi,
+        isActive: isSubmissionActive,
+        request: async (request) => {
+          if (!isSubmissionActive()) {
+            throw new WorkflowCreationScopeChangedError();
+          }
+          const result = await api({
+            ...request,
+            init: {
+              ...request.init,
+              signal: requestController.signal,
+            },
+          });
+          if (
+            request.url === "workflow" &&
+            result &&
+            typeof result === "object" &&
+            "deployment_error" in result &&
+            result.deployment_error
+          ) {
+            toast.warning(
+              "Workflow was created, but the preview deployment could not be created automatically.",
+            );
+          }
+          return result;
         },
-      });
-
-      toast.success(
-        `Workflow "${validation.workflowName}" created successfully!`,
-      );
-
-      if (workflowResult.deployment_error) {
-        toast.warning(
-          "Workflow was created, but the preview deployment could not be created automatically.",
-        );
-      }
-
-      // Navigate to workflow page
-      navigate({
-        to: "/workflows/$workflowId/$view",
-        params: {
-          workflowId: workflowResult.workflow_id,
-          view: "workspace",
+        navigate: async (workflowId) => {
+          if (!isSubmissionActive()) {
+            throw new WorkflowCreationScopeChangedError();
+          }
+          await navigate({
+            to: "/workflows/$workflowId/$view",
+            params: {
+              workflowId,
+              view: "workspace",
+            },
+          });
+          return router.state.location.pathname.endsWith(
+            `/workflows/${workflowId}/workspace`,
+          );
         },
+        isDefinitiveFailure: (error) => {
+          if (!isApiError(error)) return false;
+
+          return (
+            error.status >= 400 && error.status < 500 && error.status !== 408
+          );
+        },
+        onStart: () => setIsSubmitting(true),
+        onFinish: () => setIsSubmitting(false),
+        onMachineCreated: () => {
+          toast.success(
+            `Machine "${validation.machineName}" created successfully!`,
+          );
+        },
+        onWorkflowCreated: () => {
+          toast.success(
+            `Workflow "${validation.workflowName}" created successfully!`,
+          );
+        },
+      })
+      .catch((error) => {
+        if (
+          !isSubmissionActive() ||
+          error instanceof WorkflowCreationScopeChangedError
+        ) {
+          return;
+        }
+        console.error("Error creating workflow:", error);
+        if (error instanceof AmbiguousWorkflowCreationError) {
+          toast.error(error.message, {
+            duration: Number.POSITIVE_INFINITY,
+          });
+        } else if (error instanceof MachineConfigurationChangedError) {
+          toast.error(error.message, {
+            duration: Number.POSITIVE_INFINITY,
+            action: {
+              label: "Use new settings",
+              onClick: () => creationSession.startNewMachineAttempt(),
+            },
+          });
+        } else if (error instanceof WorkflowNavigationError) {
+          toast.error(error.message);
+        } else {
+          toast.error(
+            isApiError(error)
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : "Failed to create workflow",
+          );
+        }
+      })
+      .finally(() => {
+        requestControllersRef.current.delete(requestController);
       });
-    } catch (error) {
-      console.error("Error creating workflow:", error);
-      toast.error(
-        isApiError(error)
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : "Failed to create workflow",
-      );
-    }
   };
 
   return (
@@ -697,7 +770,18 @@ export default function WorkflowImport() {
         <div className="mx-4 w-full max-w-5xl py-10">
           <div className="space-y-12">
             <Import />
-            <WorkflowImportSelectedMachine />
+            <WorkflowImportSelectedMachine
+              disabled={isSubmitting}
+              onNewMachineIntent={() => {
+                const allowed = creationSession.startNewMachineAttempt();
+                if (!allowed) {
+                  toast.error(
+                    "Resolve the previous creation attempt before starting another machine.",
+                  );
+                }
+                return allowed;
+              }}
+            />
             <WorkflowModelCheck />
           </div>
 
@@ -713,6 +797,7 @@ export default function WorkflowImport() {
                 iconPlacement="right"
                 className="flex items-center gap-2 px-8 py-3 drop-shadow-lg"
                 disabled={
+                  isSubmitting ||
                   !validation.workflowName ||
                   (validation.machineOption === "existing" &&
                     !validation.selectedMachineId)
@@ -1016,12 +1101,66 @@ function ImportView() {
         return;
       }
 
+      const { environment, ...importedWorkflowState } =
+        parseWorkflowImport<ImportedWorkflowEnvironment>(text);
+
+      if (!environment) {
+        const importData = {
+          importOption: "import" as const,
+          ...importedWorkflowState,
+          hasEnvironment: false,
+          workflowApi: undefined,
+          importedFileName: fileName || "",
+
+          // Reset dependencies to trigger re-analysis
+          dependencies: undefined,
+          selectedConflictingNodes: {},
+          selectedCustomNodesToApply: undefined,
+
+          docker_command_steps: undefined,
+          gpuType: "A10G",
+          comfyUiHash:
+            latestHashes?.comfyui_hash ||
+            "158419f3a0017c2ce123484b14b6c527716d6ec8",
+          install_custom_node_with_gpu: false,
+          base_docker_image: undefined,
+          python_version: "3.11",
+        } as Partial<StepValidation>;
+
+        setValidation({
+          ...importData,
+        });
+
+        return;
+      }
+
+      const data = {
+        importOption: "import" as const,
+        ...importedWorkflowState,
+        importedFileName: fileName || "",
+
+        // Reset dependencies to trigger re-analysis even with environment
+        dependencies: undefined,
+        selectedConflictingNodes: {},
+        selectedCustomNodesToApply: undefined,
+
+        docker_command_steps: environment.docker_command_steps,
+        gpuType: environment.gpu || "A10G",
+        comfyUiHash:
+          environment.comfyui_version ||
+          latestHashes?.comfyui_hash ||
+          "158419f3a0017c2ce123484b14b6c527716d6ec8",
+        install_custom_node_with_gpu:
+          environment.install_custom_node_with_gpu ?? false,
+        base_docker_image: environment.base_docker_image,
+        python_version: environment.python_version || "3.11",
+        hasEnvironment: true,
+      } as Partial<StepValidation>;
+
+      console.log(data);
+
       setValidation({
-        ...(buildImportedWorkflowPatch(
-          text,
-          fileName,
-          latestHashes,
-        ) as Partial<StepValidation>),
+        ...data,
       });
     },
     [validation, setValidation, latestHashes],
