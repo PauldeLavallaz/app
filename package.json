@@ -2,9 +2,11 @@
   "name": "app",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "bun@1.2.10",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "bun test src/components/onboarding/workflow-import-utils.test.js src/components/onboarding/workflow-import-data.test.mjs src/lib/auth-scope.test.js",
     "dev": "vite --port 3001",
     "build": "vite build",
     "preview": "vite preview",

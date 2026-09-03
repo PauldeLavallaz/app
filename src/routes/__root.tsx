@@ -4,9 +4,8 @@ import {
   Outlet,
   redirect,
   useLocation,
-  useRouter,
 } from "@tanstack/react-router";
-import React, { Suspense, useEffect, useRef, useState } from "react";
+import React, { Suspense, useEffect, useLayoutEffect, useState } from "react";
 
 const TanStackRouterDevtools =
   process.env.NODE_ENV === "production"
@@ -35,7 +34,7 @@ import { useOrgSelector } from "@/components/OrgSelector";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
-import { getAuthScopeKey } from "../lib/auth-scope";
+import { getAuthScopeKey, reconcileAuthScopeCache } from "../lib/auth-scope";
 import { queryClient } from "../lib/providers";
 import { getApiBaseUrl } from "../lib/runtime-config";
 
@@ -114,6 +113,19 @@ export const Route = createRootRouteWithContext<RootRouteContext>()({
 
 function AutumnProviderComponent() {
   const { getToken, isSignedIn, orgId, userId } = useAuth();
+  const authScope = getAuthScopeKey(userId, orgId);
+  const [readyAuthScope, setReadyAuthScope] = useState(authScope);
+
+  useLayoutEffect(() => {
+    const scopeChanged = reconcileAuthScopeCache(
+      readyAuthScope,
+      authScope,
+      () => queryClient.clear(),
+    );
+    if (scopeChanged) setReadyAuthScope(authScope);
+  }, [authScope, readyAuthScope]);
+
+  if (readyAuthScope !== authScope) return null;
 
   if (!isSignedIn) {
     return <RootComponent />;
@@ -121,7 +133,7 @@ function AutumnProviderComponent() {
 
   return (
     <AutumnProvider
-      key={getAuthScopeKey(userId, orgId)}
+      key={authScope}
       backendUrl={getApiBaseUrl()}
       getBearerToken={async () => getToken()}
       includeCredentials
@@ -135,27 +147,7 @@ function AutumnProviderComponent() {
 function RootComponent() {
   const auth = useAuth();
 
-  const router = useRouter();
-  const isFirstRender = useRef(true);
-  const currentAuthScope = useRef(getAuthScopeKey(auth.userId, auth.orgId));
   const [shouldLoadCommand, setShouldLoadCommand] = useState(false);
-
-  useEffect(() => {
-    const nextAuthScope = getAuthScopeKey(auth.userId, auth.orgId);
-
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      currentAuthScope.current = nextAuthScope;
-      return;
-    }
-
-    if (currentAuthScope.current === nextAuthScope) {
-      return;
-    }
-
-    currentAuthScope.current = nextAuthScope;
-    queryClient.removeQueries();
-  }, [auth.orgId, auth.userId]);
 
   const { pathname } = useLocation();
   const isWorkflowPage = pathname.includes("/workflows/");
