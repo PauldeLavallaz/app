@@ -23,6 +23,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import { getApiRouteUrl } from "@/lib/runtime-config";
 import { DownloadButton } from "@/components/download-button";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Button } from "@/components/ui/button";
@@ -143,11 +144,9 @@ function _FileURLRender({
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (token) {
-      setImageError(false);
-      setIsLoading(true);
-    }
-  }, [token]);
+    setImageError(false);
+    setIsLoading(true);
+  }, [token, url]);
 
   useEffect(() => {
     if (!imageError && !isLoading) {
@@ -817,7 +816,7 @@ export function FileURLRenderDropdown({
                   });
                   const isLocal = process.env.NODE_ENV === "development";
                   const shareUrl = isLocal
-                    ? `${process.env.NEXT_PUBLIC_CD_API_URL}/api/share/output/${data.id}`
+                    ? getApiRouteUrl(`/share/output/${data.id}`)
                     : `/api/share/output/${data.id}`;
                   try {
                     await navigator.clipboard.writeText(shareUrl);

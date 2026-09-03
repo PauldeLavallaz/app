@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   reloadIframe,
+  sanitizeWorkflowGraph,
   sendEventToCD,
   sendInetrnalEventToCD,
   sendWorkflow,
@@ -23,6 +24,7 @@ import {
   useSessionIdInSessionView,
   useWorkflowIdInSessionView,
 } from "@/hooks/hook";
+import { getApiBaseUrl } from "@/lib/runtime-config";
 import { useCurrentWorkflow } from "@/hooks/use-current-workflow";
 import { useMachine } from "@/hooks/use-machine";
 import { useAuthStore } from "@/lib/auth-store";
@@ -139,7 +141,7 @@ export default function Workspace({
 
   const newPythonEndpoint = isLocal
     ? process.env.NEXT_PUBLIC_NGROK_CD_API_URL // or whatever your local Python API URL is
-    : process.env.NEXT_PUBLIC_CD_API_URL;
+    : getApiBaseUrl();
 
   const { userId, orgId } = useAuth();
   const volumeName = `models_${orgId || userId}`;
@@ -159,6 +161,13 @@ export default function Workspace({
   } = useWorkflowStore();
 
   const { value: selectedVersion } = useSelectedVersion(workflowId ?? null);
+  const workflowVersionToImport =
+    versionData?.workflow ??
+    selectedVersion?.workflow ??
+    workflow?.versions?.find(
+      (workflowVersion: any) => workflowVersion.version === version,
+    )?.workflow ??
+    workflow?.versions?.[0]?.workflow;
 
   const { data: workflowLinkJson, isLoading: isLoadingWorkflowLink } = useQuery(
     {
@@ -189,7 +198,7 @@ export default function Workspace({
 
     setDifferences(differences);
 
-    const isDraftDifferent = Object.keys(differences).length > 0;
+    const isDraftDifferent = differences.length > 0;
     console.log(
       "isDraftDifferent",
       isDraftDifferent,
@@ -245,10 +254,29 @@ export default function Workspace({
   const workflowToSend = useRef<any>(null);
 
   const setComfyUIWorkflow = (workflowJson: any) => {
-    workflowToSend.current = workflowJson;
+    const sanitizedWorkflow = sendWorkflow(workflowJson);
+    workflowToSend.current = sanitizedWorkflow;
     setWorkflowSendAttempts(1); // Start first attempt
-    currentWorkflowRef.current = workflowJson;
-    sendWorkflow(workflowJson);
+    currentWorkflowRef.current = sanitizedWorkflow;
+  };
+
+  const applyComfyDeployPrompt = (prompt: any) => {
+    if (!prompt?.workflow) return;
+
+    const nextWorkflow = sanitizeWorkflowGraph(prompt.workflow);
+    const differences = diff(currentWorkflowRef.current, nextWorkflow, {
+      keysToSkip: ["extra", "order"],
+      embeddedObjKeys: {
+        nodes: "id",
+      },
+    });
+
+    setWorkflowAPI(prompt.output);
+
+    if (differences.length > 0) {
+      currentWorkflowRef.current = nextWorkflow;
+      setWorkflow(nextWorkflow);
+    }
   };
 
   useEffect(() => {
@@ -358,25 +386,9 @@ export default function Workspace({
           setCDSetup(true);
           setProgress(100);
         } else if (data.type === "cd_plugin_onAfterChange") {
+          applyComfyDeployPrompt(data.data);
         } else if (data.type === "cd_plugin_onDeployChanges") {
-          // console.log("current workflow", data.data.workflow);
-
-          const differences = diff(
-            currentWorkflowRef.current,
-            data.data.workflow,
-            {
-              keysToSkip: ["extra", "order"],
-              embeddedObjKeys: {
-                nodes: "id",
-              },
-            },
-          );
-
-          if (Object.keys(differences).length > 0) {
-            currentWorkflowRef.current = data.data.workflow;
-            setWorkflow(data.data.workflow);
-            setWorkflowAPI(data.data.output);
-          }
+          applyComfyDeployPrompt(data.data);
         } else if (data.type === "workflow_info") {
           fetchToken().then((x) => {
             const info = {
@@ -512,14 +524,23 @@ export default function Workspace({
               onClick={() => {
                 setIsImportDialogOpen(false);
                 if (workflowId) {
-                  console.log("using workflowId", versionData.workflow);
-                  setComfyUIWorkflow(versionData.workflow);
+                  if (!workflowVersionToImport) {
+                    toast.error("Workflow version is still loading");
+                    return;
+                  }
+                  console.log("using workflowId", workflowVersionToImport);
+                  setComfyUIWorkflow(workflowVersionToImport);
                 } else if (workflowLink) {
                   console.log("using workflowLink", workflowLinkJson);
                   setComfyUIWorkflow(workflowLinkJson);
                 }
               }}
-              disabled={isLoadingVersion || isLoadingWorkflowLink}
+              disabled={
+                isLoadingVersion ||
+                isLoadingWorkflowLink ||
+                (!!workflowId && !workflowVersionToImport) ||
+                (!!workflowLink && !workflowLinkJson)
+              }
               className="gap-1"
             >
               <Download className="h-4 w-4" />

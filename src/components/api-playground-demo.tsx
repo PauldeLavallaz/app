@@ -1,26 +1,26 @@
 import { useAuthStore } from "@/lib/auth-store";
+import { getApiBaseUrl, getAppBaseUrl } from "@/lib/runtime-config";
 import { useQuery } from "@tanstack/react-query";
 import type React from "react";
 import { ApiPlayground } from "./docs";
 import { LoadingIcon } from "./loading-icon";
 
 // Example OpenAPI spec
+const apiKeysUrl = `${getAppBaseUrl()}/api-keys`;
+const configuredApiServer = `${getApiBaseUrl()}/api`;
+
 const exampleOpenApiSpec = {
   openapi: "3.1.0",
   info: {
-    title: "ComfyDeploy API",
+    title: "Morfeo Deploy API",
     description:
-      "\n### Overview\n\nWelcome to the ComfyDeploy API!\n\nTo create a run thru the API, use the [queue run endpoint](#tag/run/POST/run/deployment/queue).\n\nCheck out the [get run endpoint](#tag/run/GET/run/{run_id}), for getting the status and output of a run.\n\n### Authentication\n\nTo authenticate your requests, include your API key in the `Authorization` header as a bearer token. Make sure to generate an API key in the [API Keys section of your ComfyDeploy account](https://www.comfydeploy.com/api-keys).\n\n###\n\n",
+      `\n### Overview\n\nWelcome to the Morfeo Deploy API!\n\nTo create a run thru the API, use the [queue run endpoint](#tag/run/POST/run/deployment/queue).\n\nCheck out the [get run endpoint](#tag/run/GET/run/{run_id}), for getting the status and output of a run.\n\n### Authentication\n\nTo authenticate your requests, include your API key in the \`Authorization\` header as a bearer token. Make sure to generate an API key in the [API Keys section of your account](${apiKeysUrl}).\n\n###\n\n`,
     version: "V2",
   },
   servers: [
     {
-      url: "https://api.comfydeploy.com/api",
-      description: "Production server",
-    },
-    {
-      url: "https://staging.api.comfydeploy.com/api",
-      description: "Staging server",
+      url: configuredApiServer,
+      description: "Configured API server",
     },
     {
       url: "http://localhost:3011/api",
@@ -584,11 +584,7 @@ const exampleOpenApiSpec = {
 };
 
 export function useOpenAPISpec() {
-  const isLocalhost = window.location.hostname === "localhost";
-
-  const url = isLocalhost
-    ? "http://localhost:3011"
-    : "https://api.comfydeploy.com";
+  const url = getApiBaseUrl();
 
   return useQuery({
     queryKey: ["api-playground-demo"],

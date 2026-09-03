@@ -403,7 +403,7 @@ export function GuideDialog({ guideType }: GuideDialogProps) {
 //             width="100%"
 //             height="100%"
 //             src="https://www.youtube.com/embed/cF9xaZCQu5A?autoplay=0&rel=0&modestbranding=1"
-//             title="Comfy Deploy Update"
+//             title="Morfeo Deploy Update"
 //             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
 //             allowFullScreen
 //           />

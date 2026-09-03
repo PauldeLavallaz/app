@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/lib/auth-store";
+import { getApiRouteUrl } from "@/lib/runtime-config";
 import { infiniteQueryOptions, keepPreviousData } from "@tanstack/react-query";
 import type { ColumnSchema } from "./schema";
 import { type SearchParamsType, searchParamsSerializer } from "./search-params";
@@ -9,7 +10,7 @@ export type InfiniteQueryMeta = {
   chartData: { timestamp: number; [key: string]: number }[];
 };
 
-const API_URL = `${process.env.NEXT_PUBLIC_CD_API_URL}/api/runs`;
+const API_URL = getApiRouteUrl("/runs");
 
 export const dataOptions = (search: SearchParamsType) => {
   return infiniteQueryOptions({

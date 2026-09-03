@@ -30,10 +30,7 @@
     # This prevents try_files from running before reverse_proxy
     route {
         # API proxy - must come first
-        reverse_proxy /api/* https://prod-staging.api.comfydeploy.com {
-            transport http {
-                tls
-            }
+        reverse_proxy /api/* {$CD_API_UPSTREAM:http://localhost:3011} {
             header_up Host {upstream_hostport}
             header_up X-Forwarded-Host {upstream_hostport}
             header_up X-Forwarded-Proto {scheme}

@@ -6,9 +6,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAnalytics } from "@/hooks/use-analytics";
 import { Copy } from "lucide-react";
 import { parseAsInteger, useQueryState } from "nuqs";
-import { usePostHog } from "posthog-js/react";
 import { type RefObject, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { create } from "zustand";
@@ -17,6 +17,7 @@ import { type LogsType, LogsViewer } from "@/components/log/logs-viewer";
 import { useCurrentWorkflow } from "@/hooks/use-current-workflow";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
+import { getApiRouteUrl } from "@/lib/runtime-config";
 import { cn } from "@/lib/utils";
 
 export function useWorkflowVersion(workflow: any) {
@@ -130,7 +131,7 @@ export async function getWorkflowJSON(
   const id = toast.loading("Version loading...");
 
   const response = await fetch(
-    `${process.env.NEXT_PUBLIC_CD_API_URL}/api/workflow/${workflow_id}/version/${version}`,
+    getApiRouteUrl(`/workflow/${workflow_id}/version/${version}`),
     {
       method: "GET",
       headers: {
@@ -174,7 +175,7 @@ export function CopyWorkflowVersion({
 }) {
   const { workflow } = useCurrentWorkflow(workflow_id);
   const fetchToken = useAuthStore((state) => state.fetchToken);
-  const posthog = usePostHog();
+  const { track } = useAnalytics();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -196,7 +197,7 @@ export function CopyWorkflowVersion({
               await fetchToken(),
             );
 
-            posthog.capture("workflow_page:copy_workflow_button_click", {
+            track("workflow_page:copy_workflow_button_click", {
               workflow_id: workflow.id,
               workflow_version_id: data.id,
               workflow_version: version,
@@ -228,7 +229,7 @@ export function CopyWorkflowVersion({
               return;
             }
 
-            posthog.capture("workflow_page:copy_workflow_button_click", {
+            track("workflow_page:copy_workflow_button_click", {
               workflow_id: workflow.id,
               workflow_version_id: data.id,
               workflow_version: version,
@@ -255,7 +256,7 @@ export function CopyWorkflowVersion({
                 params: { version },
               });
 
-              posthog.capture("workflow_page:copy_workflow_button_click", {
+              track("workflow_page:copy_workflow_button_click", {
                 workflow_id: workflow.id,
                 workflow_version: version,
                 workflow_copy_type: "export",

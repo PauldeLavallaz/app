@@ -7,6 +7,7 @@ import { lazy, useEffect, useState } from "react";
 import { useIsDeploymentAllowed } from "@/hooks/use-current-plan";
 import { useCurrentWorkflow } from "@/hooks/use-current-workflow";
 import { cn } from "@/lib/utils";
+import { getApiRouteUrl } from "@/lib/runtime-config";
 import { MyDrawer } from "../drawer";
 import { ErrorBoundary } from "../error-boundary";
 import { VersionChecker } from "../machine/version-checker";
@@ -331,7 +332,7 @@ export function WorkspaceClientWrapper({
     return (
       <WorkspaceMachineLoading
         machine={machine}
-        endpoint={`${process.env.NEXT_PUBLIC_CD_API_URL}/api/machine`}
+        endpoint={getApiRouteUrl("/machine")}
       />
     );
 

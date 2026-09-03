@@ -70,7 +70,11 @@ export function formatTime(seconds: number): string {
 }
 
 export function isCustomBucket(url: string) {
-  return url.includes("X-Amz-Algorithm");
+  return (
+    url.includes("X-Amz-Algorithm") ||
+    url.includes(".r2.cloudflarestorage.com") ||
+    url.includes("r2.dev")
+  );
 }
 
 export function isGif(url: string) {
@@ -82,8 +86,9 @@ export const getOptimizedImage = (
   isSmallView = false,
   authToken?: string | null,
 ) => {
-  // Skip if the url is from custom bucket or is a GIF file
-  if (isGif(url)) return url;
+  // Private/custom bucket URLs are usually presigned. Optimizing them would
+  // strip the query signature and turn a working image into a broken URL.
+  if (isCustomBucket(url) || isGif(url)) return url;
 
   // Use new image optimization system
   const s3Key = extractS3Key(url);

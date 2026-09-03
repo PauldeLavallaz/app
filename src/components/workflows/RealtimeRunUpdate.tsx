@@ -194,7 +194,7 @@ export function RealtimeWorkflowProvider({
   status?: string;
   deploymentId?: string;
 }) {
-  const { connectionStatus } = useRealtimeWorkflowUpdate2(
+  const { connectionStatus } = useRealtimeWorkflowUpdateV2(
     workflowId,
     status,
     deploymentId,

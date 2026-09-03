@@ -451,7 +451,7 @@ function MachineVersionErrorLogs({ machineVersionId }: { machineVersionId: strin
           <ul className="mt-2 list-disc space-y-1 pl-4">
             <li>Try rebuilding the machine to ensure all dependencies are properly installed</li>
             <li>Double check your ComfyUI version</li>
-            <li>Update ComfyDeploy custom nodes to the latest version</li>
+            <li>Update Morfeo Deploy custom nodes to the latest version</li>
           </ul>
         </div>
       </LogsViewer>

@@ -6,7 +6,7 @@ import {
   useLocation,
   useRouter,
 } from "@tanstack/react-router";
-import React, { useEffect, useRef } from "react";
+import React, { Suspense, useEffect, useRef, useState } from "react";
 
 const TanStackRouterDevtools =
   process.env.NODE_ENV === "production"
@@ -29,17 +29,41 @@ import {
 import { AutumnProvider } from "autumn-js/react";
 import { Toaster } from "sonner";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
-import { AppSidebar, GuestSidebar } from "@/components/app-sidebar";
-import { ComfyCommand } from "@/components/comfy-command";
 import { Icon } from "@/components/icon-word";
 import { LocalGitDisplay } from "@/components/local-git-display";
 import { useOrgSelector } from "@/components/OrgSelector";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { WorkflowNavbar } from "@/components/workflow-navbar";
-import { AssetsBrowserPopup } from "@/components/workspace/assets-browser-drawer";
 import { cn } from "@/lib/utils";
+import { getAuthScopeKey } from "../lib/auth-scope";
 import { queryClient } from "../lib/providers";
+import { getApiBaseUrl } from "../lib/runtime-config";
+
+const AppSidebar = React.lazy(() =>
+  import("@/components/app-sidebar").then((module) => ({
+    default: module.AppSidebar,
+  })),
+);
+const GuestSidebar = React.lazy(() =>
+  import("@/components/guest-sidebar").then((module) => ({
+    default: module.GuestSidebar,
+  })),
+);
+const ComfyCommand = React.lazy(() =>
+  import("@/components/comfy-command").then((module) => ({
+    default: module.ComfyCommand,
+  })),
+);
+const WorkflowNavbar = React.lazy(() =>
+  import("@/components/workflow-navbar").then((module) => ({
+    default: module.WorkflowNavbar,
+  })),
+);
+const AssetsBrowserPopup = React.lazy(() =>
+  import("@/components/workspace/assets-browser-drawer").then((module) => ({
+    default: module.AssetsBrowserPopup,
+  })),
+);
 
 export type RootRouteContext = {
   auth?: ReturnType<typeof useAuth>;
@@ -89,14 +113,20 @@ export const Route = createRootRouteWithContext<RootRouteContext>()({
 });
 
 function AutumnProviderComponent() {
-  const auth = useAuth();
+  const { getToken, isSignedIn, orgId, userId } = useAuth();
 
-  if (!auth.isSignedIn) {
+  if (!isSignedIn) {
     return <RootComponent />;
   }
 
   return (
-    <AutumnProvider includeCredentials>
+    <AutumnProvider
+      key={getAuthScopeKey(userId, orgId)}
+      backendUrl={getApiBaseUrl()}
+      getBearerToken={async () => getToken()}
+      includeCredentials
+      suppressLogs
+    >
       <RootComponent />
     </AutumnProvider>
   );
@@ -107,26 +137,67 @@ function RootComponent() {
 
   const router = useRouter();
   const isFirstRender = useRef(true);
-  const currentOrg = useRef(auth.orgId);
+  const currentAuthScope = useRef(getAuthScopeKey(auth.userId, auth.orgId));
+  const [shouldLoadCommand, setShouldLoadCommand] = useState(false);
 
   useEffect(() => {
+    const nextAuthScope = getAuthScopeKey(auth.userId, auth.orgId);
+
     if (isFirstRender.current) {
       isFirstRender.current = false;
+      currentAuthScope.current = nextAuthScope;
       return;
     }
 
-    currentOrg.current = auth.orgId;
-    queryClient.resetQueries();
-  }, [auth.orgId, router]);
+    if (currentAuthScope.current === nextAuthScope) {
+      return;
+    }
+
+    currentAuthScope.current = nextAuthScope;
+    queryClient.removeQueries();
+  }, [auth.orgId, auth.userId]);
 
   const { pathname } = useLocation();
   const isWorkflowPage = pathname.includes("/workflows/");
+  const needsAssetsBrowser =
+    isWorkflowPage &&
+    (pathname.includes("/workspace") || pathname.includes("/playground"));
   const isAuthPage = publicRoutes.some((route) => {
     if (typeof route === "string") {
       return pathname === route;
     }
     return route.wildcard && pathname.startsWith(route.path);
   });
+
+  useEffect(() => {
+    if (!auth.isSignedIn || isAuthPage) {
+      setShouldLoadCommand(false);
+      return;
+    }
+
+    const loadCommand = () => setShouldLoadCommand(true);
+    const idleCallback =
+      "requestIdleCallback" in window
+        ? window.requestIdleCallback(loadCommand, { timeout: 4000 })
+        : window.setTimeout(loadCommand, 2500);
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "k" && (event.metaKey || event.ctrlKey)) {
+        loadCommand();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if ("cancelIdleCallback" in window && typeof idleCallback === "number") {
+        window.cancelIdleCallback(idleCallback);
+      } else {
+        window.clearTimeout(idleCallback as number);
+      }
+    };
+  }, [auth.isSignedIn, isAuthPage]);
 
   return (
     <ThemeProvider defaultTheme="system">
@@ -136,16 +207,24 @@ function RootComponent() {
       </div>
 
       {isAuthPage && !auth.isSignedIn ? (
-        <GuestSidebar />
+        <Suspense fallback={null}>
+          <GuestSidebar />
+        </Suspense>
       ) : (
         !isWorkflowPage && (
           <SignedIn>
-            <AppSidebar />
+            <Suspense fallback={null}>
+              <AppSidebar />
+            </Suspense>
           </SignedIn>
         )
       )}
       <SignedIn>
-        {isWorkflowPage && <WorkflowNavbar />}
+        {isWorkflowPage && (
+          <Suspense fallback={null}>
+            <WorkflowNavbar />
+          </Suspense>
+        )}
         {!isWorkflowPage && (
           <div className="fixed top-0 z-50 flex h-[40px] w-full flex-row items-center gap-2 border-gray-200 border-b bg-transparent p-1 md:hidden dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-md">
             <SidebarTrigger className="h-8 w-8 rounded-none border-gray-200 border-r p-2 dark:border-zinc-700" />
@@ -175,10 +254,22 @@ function RootComponent() {
             </div>
           </SignedOut>
         )}
-        <ComfyCommand />
+        <SignedIn>
+          {shouldLoadCommand && (
+            <Suspense fallback={null}>
+              <ComfyCommand />
+            </Suspense>
+          )}
+        </SignedIn>
         <Toaster richColors closeButton={true} />
         <LocalGitDisplay />
-        <AssetsBrowserPopup isPlayground />
+        <SignedIn>
+          {needsAssetsBrowser && (
+            <Suspense fallback={null}>
+              <AssetsBrowserPopup isPlayground />
+            </Suspense>
+          )}
+        </SignedIn>
       </div>
     </ThemeProvider>
   );

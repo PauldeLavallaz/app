@@ -5,10 +5,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearch } from "@tanstack/react-router";
 import { useCustomer } from "autumn-js/react";
 import { Check, Sparkle } from "lucide-react";
-import { usePostHog } from "posthog-js/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useAnalytics } from "@/hooks/use-analytics";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { api } from "@/lib/api";
@@ -258,7 +258,7 @@ export function UpgradeButton(props: PlanButtonProps) {
 
   const router = useRouter();
 
-  const posthog = usePostHog();
+  const { track } = useAnalytics();
 
   // Parse the subscription data from props.data
   const subscriptionData = props.subscription;
@@ -916,7 +916,7 @@ export function UpgradeButton(props: PlanButtonProps) {
                 return;
               }
 
-              posthog.capture("pricing_option:click", {
+              track("pricing_option:click", {
                 ...props.data,
               });
 
@@ -1055,7 +1055,7 @@ export function UpgradeButton(props: PlanButtonProps) {
             <Button
               onClick={async (e) => {
                 e.preventDefault();
-                posthog.capture("pricing_option:click:apply_coupon", {
+                track("pricing_option:click:apply_coupon", {
                   ...props.data,
                 });
 

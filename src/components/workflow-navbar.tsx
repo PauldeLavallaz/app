@@ -58,7 +58,6 @@ import { cn } from "@/lib/utils";
 import { serverAction } from "@/lib/workflow-version-api";
 import { useDrawerStore } from "@/stores/drawer-store";
 import type { Session } from "./app-sidebar";
-import { ConnectionStatusIndicator } from "./connection-status-indicator";
 import { ImageInputsTooltip } from "./image-inputs-tooltip";
 import { WorkflowModelCheck } from "./onboarding/workflow-model-check";
 import { useIsAdminAndMember } from "./permissions";
@@ -86,7 +85,6 @@ import { Separator } from "./ui/separator";
 import { Switch } from "./ui/switch";
 import { useSelectedVersion, VersionSelectV2 } from "./version-select";
 import { WorkflowDropdown } from "./workflow-dropdown";
-import { useRealtimeWorkflowUpdateV2 } from "./workflows/RealtimeRunUpdate";
 import { AssetBrowserSidebar } from "./workspace/assets-browser-sidebar";
 import { DeploymentDrawer } from "./workspace/DeploymentDisplay";
 import { ExternalNodeDocs } from "./workspace/external-node-docs";
@@ -188,9 +186,6 @@ function CenterNavigation() {
   const [hoveredButton, setHoveredButton] = useState<string | null>(null);
   const effectiveSessionId = getCurrentEffectiveSessionId(workflowId || "");
   const navigateToView = useWorkflowNavigation();
-
-  // Get real-time connection status for current workflow
-  const { connectionDetails } = useRealtimeWorkflowUpdateV2(workflowId || "");
 
   const shouldHideDeploymentFeatures = false; //!isPlanLoading && !isDeploymentAllowed;
 
@@ -657,40 +652,6 @@ function CenterNavigation() {
         })()}
       </motion.div>
 
-      {/* Real-time connection status indicator - only show when needed */}
-      <AnimatePresence mode="wait">
-        {(view === "playground" ||
-          view === "gallery" ||
-          view === "requests" ||
-          view === "deployment") &&
-          workflowId && (
-            <motion.div
-              key="connection-indicator"
-              initial={{
-                opacity: 0,
-                x: -20,
-                scale: 0.8,
-              }}
-              animate={{
-                opacity: 1,
-                x: 0,
-                scale: 1,
-              }}
-              transition={{
-                type: "spring",
-                stiffness: 400,
-                damping: 25,
-                duration: 0.3,
-              }}
-            >
-              <ConnectionStatusIndicator
-                connectionDetails={connectionDetails}
-                size="md"
-                className="ml-2 h-[46px]"
-              />
-            </motion.div>
-          )}
-      </AnimatePresence>
     </div>
   );
 }
@@ -714,13 +675,13 @@ function WorkflowNavbarLeft() {
         className="mr-2 shrink-0 drop-shadow-md transition-transform hover:scale-105"
       >
         <img
-          src="/icon-light.svg"
-          alt="comfydeploy"
+          src="/morfeo-icon-light.svg"
+          alt="Morfeo Deploy"
           className="h-7 w-7 dark:hidden"
         />
         <img
-          src="/icon.svg"
-          alt="comfydeploy"
+          src="/morfeo-icon.svg"
+          alt="Morfeo Deploy"
           className="hidden h-7 w-7 dark:block"
         />
       </Link>
@@ -1655,19 +1616,20 @@ function SessionTimerButton({
   const urlSessionId = useSessionIdInSessionView();
 
   const effectiveSessionId = getCurrentEffectiveSessionId(workflowId || "");
+  const activeSessionId = effectiveSessionId || urlSessionId;
 
   const { data: session, refetch } = useQuery<Session>({
-    enabled: !!effectiveSessionId,
-    queryKey: ["session", effectiveSessionId],
+    enabled: !!activeSessionId,
+    queryKey: ["session", activeSessionId],
     refetchInterval: (query) => {
       if (!query.state.data) return false;
       if ((query.state.data as Session).timeout_end !== null) return false;
-      return 1000;
+      return 5_000;
     },
   });
 
   // Only show session if we have both session data AND a valid session ID
-  const activeSession = effectiveSessionId ? session : null;
+  const activeSession = activeSessionId ? session : null;
 
   const { countdown, progressPercentage } = useSessionTimer(session);
   const { deleteSession } = useSessionAPI();
@@ -1699,7 +1661,7 @@ function SessionTimerButton({
     e.preventDefault();
     e.stopPropagation();
 
-    const sessionIdToDelete = effectiveSessionId;
+    const sessionIdToDelete = activeSessionId;
     if (!sessionIdToDelete) return;
     setIsPopoverOpen(false);
 
@@ -1739,7 +1701,7 @@ function SessionTimerButton({
 
   return (
     <AnimatePresence mode="popLayout">
-      {activeSession && effectiveSessionId && (
+      {activeSession && activeSessionId && (
         <motion.div
           layout
           key="session-timer"

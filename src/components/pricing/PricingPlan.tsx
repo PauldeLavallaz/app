@@ -85,7 +85,7 @@ const sections: Section[] = [
           Basic: (
             <Tooltip>
               <TooltipTrigger className="flex items-center justify-center gap-2">
-                Credit base <Info size={14} />
+                Pay as you go credits <Info size={14} />
               </TooltipTrigger>
               <TooltipContent>See GPU pricing table below</TooltipContent>
             </Tooltip>

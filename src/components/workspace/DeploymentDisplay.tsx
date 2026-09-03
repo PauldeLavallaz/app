@@ -61,6 +61,7 @@ import { api } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import { callServerPromise } from "@/lib/call-server-promise";
 import { cn } from "@/lib/utils";
+import { getApiBaseUrl, getStudioBaseUrl } from "@/lib/runtime-config";
 import ApiPlaygroundDemo from "../api-playground-demo";
 import { MyDrawer } from "../drawer";
 import { useGPUConfig } from "../machine/machine-schema";
@@ -1060,7 +1061,7 @@ export function formatCode({
     .replace("<URLONLY>", domain ?? "http://localhost:3000")
     .replace(
       "<APIURLONLY>",
-      process.env.NEXT_PUBLIC_CD_API_URL ?? "http://localhost:3011",
+      getApiBaseUrl(),
     )
     .replace("<MODEL_ID>", model_id ?? "<MODEL_ID>");
 }
@@ -1321,7 +1322,7 @@ function ShareLinkDisplay({ deployment }: { deployment: Deployment }) {
   const parts = deployment.share_slug?.split("_") ?? [];
   const slug = parts[0];
   const workflow_name = parts.slice(1).join("_");
-  const commuityShareLink = `https://studio.comfydeploy.com/share/playground/${slug}/${workflow_name}`;
+  const commuityShareLink = `${getStudioBaseUrl()}/share/playground/${slug}/${workflow_name}`;
   const shareLink = `${window.location.origin}/share/${slug}/${workflow_name}`;
 
   const handleCopy = async () => {
@@ -1409,7 +1410,7 @@ function V0IntegrationButton({
         if (!token) return;
 
         // v0 API limits: title <= 32 chars, prompt <= 500 chars
-        const title = "ComfyDeploy Integration";
+        const title = "Morfeo Deploy Integration";
 
         // Build schema lines (may be empty) and truncate if needed
         const schemaLines = (inputs ?? []).map(
@@ -1420,7 +1421,7 @@ function V0IntegrationButton({
           schemaSnippet = `${schemaSnippet.slice(0, 210)}\n...`;
         }
 
-        const promptBase = `Build a minimal integration page for a ComfyDeploy deployment.\n\nRequirements:\n1. Ask the user to paste their ComfyDeploy API token and store it in client state.\n2. Render input fields based on the schema below.\n${schemaSnippet}\n3. On submit call the "queueRun" server action defined in the backend.\n4. Poll "getRun" every 2 seconds until status === success and display outputs (images / JSON).`;
+        const promptBase = `Build a minimal integration page for a Morfeo Deploy deployment.\n\nRequirements:\n1. Ask the user to paste their Morfeo Deploy API token and store it in client state.\n2. Render input fields based on the schema below.\n${schemaSnippet}\n3. On submit call the "queueRun" server action defined in the backend.\n4. Poll "getRun" every 2 seconds until status === success and display outputs (images / JSON).`;
 
         const prompt =
           promptBase.length > 500
@@ -1428,10 +1429,7 @@ function V0IntegrationButton({
             : promptBase;
 
         // Build the spec URL that v0 will fetch
-        const apiBase =
-          typeof window !== "undefined"
-            ? (process.env.NEXT_PUBLIC_CD_API_URL ?? window.location.origin)
-            : (process.env.NEXT_PUBLIC_CD_API_URL ?? "");
+        const apiBase = getApiBaseUrl();
 
         const specUrl = `${apiBase}/api/deployment/${deployment.id}/v0-ui-spec?cd_token=${token}`;
 

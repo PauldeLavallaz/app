@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useAuth } from "@clerk/clerk-react";
 
 const BATCH_SIZE = 20;
 
@@ -8,11 +9,15 @@ export function useWorkflowList(
   machine_id = "", // format: just one machine uuid
   limit: number = BATCH_SIZE,
 ) {
+  const { orgId, userId } = useAuth();
+  const authScopeKey = `${orgId ?? "personal"}:${userId ?? "anonymous"}`;
+
   return useInfiniteQuery<any[]>({
     queryKey: ["workflows"],
     queryKeyHashFn: (queryKey) => {
       return [
         ...queryKey,
+        authScopeKey,
         debouncedSearchValue,
         limit,
         user_ids,
@@ -44,8 +49,12 @@ export function useWorkflowList(
 }
 
 export function useWorkflowsAll() {
+  const { orgId, userId } = useAuth();
+  const authScopeKey = `${orgId ?? "personal"}:${userId ?? "anonymous"}`;
+
   return useQuery<any[]>({
     queryKey: ["workflows", "all"],
+    queryKeyHashFn: (queryKey) => [...queryKey, authScopeKey].join(","),
     refetchInterval: 5000,
   });
 }

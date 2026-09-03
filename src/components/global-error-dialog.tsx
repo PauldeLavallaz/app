@@ -7,7 +7,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useErrorDialogStore } from "@/stores/error-dialog-store";
-import { TopUpInline } from "@/components/pricing/TopUpInline";
 import {
   ExternalLink,
   ShieldX,
@@ -20,7 +19,13 @@ import {
   ChevronUp,
   Lock,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
+
+const TopUpInline = lazy(() =>
+  import("@/components/pricing/TopUpInline").then((module) => ({
+    default: module.TopUpInline,
+  })),
+);
 
 export function GlobalErrorDialog() {
   const { open, error, clear } = useErrorDialogStore();
@@ -109,7 +114,9 @@ export function GlobalErrorDialog() {
 
         {showTopUp ? (
           <div className="mt-2 rounded-xl border p-4 bg-muted/30">
-            <TopUpInline />
+            <Suspense fallback={null}>
+              <TopUpInline />
+            </Suspense>
           </div>
         ) : null}
 

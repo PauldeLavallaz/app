@@ -1,17 +1,22 @@
 import { useAuth, useOrganization, useUser } from "@clerk/clerk-react";
 import { useQuery } from "@tanstack/react-query";
-import { getSelfHostedMachinesAllowed } from "@/lib/autumn-helpers";
 import { AutumnDataV2Response } from "@/types/autumn-v2";
 
 export const useCurrentPlanQuery = () => {
+  const { isLoaded, isSignedIn } = useUser();
+
   return useQuery<any>({
     queryKey: ["platform", "plan"],
+    enabled: isLoaded && isSignedIn,
   });
 };
 
 export const useAutumnData = () => {
+  const { isLoaded, isSignedIn } = useUser();
+
   return useQuery<AutumnDataV2Response>({
     queryKey: ["platform", "autumn-data"],
+    enabled: isLoaded && isSignedIn,
   });
 };
 
@@ -70,23 +75,7 @@ export const useIsBusinessAllowed = () => {
 };
 
 export const useIsSelfHostedAllowed = () => {
-  const isBusinessAllowed = useIsBusinessAllowed();
-  const { data: planStatus } = useCurrentPlanWithStatus()
-  const { data: autumnData } = useAutumnData()
-
-  // Check Autumn self_hosted_machines feature
-  const hasAutumnFeature = getSelfHostedMachinesAllowed(planStatus, autumnData);
-
-  // Debug logging
-  console.log("useIsSelfHostedAllowed debug:", {
-    isBusinessAllowed,
-    hasAutumnFeature,
-    finalResult: isBusinessAllowed && hasAutumnFeature,
-    planStatus
-  });
-
-  // Backend requires BOTH: non-free plan AND self_hosted_machines feature
-  return hasAutumnFeature;
+  return true;
 };
 
 export const useCurrentPlanWithStatus = () => {

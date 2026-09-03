@@ -508,7 +508,7 @@ function RouteComponent() {
             >
               <img
                 src="https://app.comfydeploy.com/button"
-                alt="ComfyDeploy Button"
+                alt="Morfeo Deploy Button"
               />
             </div>
           )}

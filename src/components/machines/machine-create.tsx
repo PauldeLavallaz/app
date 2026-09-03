@@ -1,5 +1,4 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useCustomer } from "autumn-js/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { useQueryState } from "nuqs";
@@ -12,7 +11,7 @@ import {
 } from "@/hooks/use-current-plan";
 import { useMachine } from "@/hooks/use-machine";
 import { api } from "@/lib/api";
-import type { Feature as AutumnFeature } from "@/types/autumn-v2";
+import { getMachineLimits } from "@/lib/autumn-helpers";
 import { useLatestHashes } from "@/utils/comfydeploy-hash";
 import { MachineSettingsWrapper } from "../machine/machine-settings";
 import { LoadingIcon } from "../ui/custom/loading-icon";
@@ -86,9 +85,14 @@ export function filterMachineConfig(machine: any) {
 export function MachineCreate() {
   const navigate = useNavigate({ from: "/machines" });
 
-  const { check, isLoading: isAutumnLoading } = useCustomer();
-  const machineLimitedFeature = check({ featureId: "machine_limit" });
-  const machineLimited = !machineLimitedFeature.data?.allowed;
+  const sub = useCurrentPlan();
+  const { data: planStatus, isLoading: isAutumnLoading } =
+    useCurrentPlanWithStatus();
+  const { isLimited: machineLimited } = getMachineLimits(
+    planStatus,
+    undefined,
+    sub,
+  );
 
   const [cloneMachineId, setCloneMachineId] = useQueryState("machineId");
   const { data: machine, isLoading } = useMachine(cloneMachineId ?? undefined);

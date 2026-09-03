@@ -8,12 +8,12 @@ import type { ReactNode } from "react";
 import { satisfies } from "semver";
 
 export const FREE_TIER = {
-  name: "Pay as you go",
+  name: "Free Sandbox",
   id: "basic",
   startingAt: false,
   href: "/api/stripe/checkout?plan=basic",
   priceMonthly: "Free",
-  description: "Explore Comfy",
+  description: "Try Morfeo Deploy with tight usage limits",
   mostPopular: false,
 } satisfies Tier;
 

@@ -227,7 +227,7 @@ export function SessionCreatorForm({
   mode = "default",
 }: SessionCreatorFormProps) {
   const router = useRouter();
-  const { createSession: createDynamicSession } = useSessionAPI();
+  const { createDynamicSession } = useSessionAPI();
   const { workflow } = useCurrentWorkflow(workflowId);
   const { data: selectedMachine } = useMachine(workflow?.selected_machine_id);
   const [currentSelectedVersion] = useQueryState("version", {
@@ -317,6 +317,10 @@ export function SessionCreatorForm({
       });
 
       setSessionId(response.session_id);
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      queryClient.invalidateQueries({
+        queryKey: ["session", response.session_id],
+      });
       onSuccess?.();
     } catch (error) {
       // Global handler opens dialog for API errors. Optional: lean toast.

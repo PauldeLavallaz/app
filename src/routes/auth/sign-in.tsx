@@ -12,7 +12,11 @@ export const Route = createFileRoute("/auth/sign-in")({
 function SignInComponent() {
   return (
     <div className="w-full h-full items-center flex justify-center">
-      <SignIn waitlistUrl="/waitlist" />
+      <SignIn
+        waitlistUrl="/waitlist"
+        signUpUrl="/auth/sign-up"
+        fallbackRedirectUrl="/workflows"
+      />
     </div>
   );
 }

@@ -475,7 +475,7 @@ function SharedWorkflowDetails() {
                   <div className="mt-0.5 h-2 w-2 rounded-full bg-primary" />
                   <p>
                     Click <strong>"Use This Workflow"</strong> to import it into
-                    your ComfyDeploy workspace with pre-configured environment
+                    your Morfeo Deploy workspace with pre-configured environment
                     settings
                   </p>
                 </div>

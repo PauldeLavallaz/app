@@ -21,6 +21,7 @@ import {
   type getInputsFromWorkflow,
   getGroupsFromWorkflowAPI,
 } from "@/lib/getInputsFromWorkflow";
+import { getApiRouteUrl } from "@/lib/runtime-config";
 import { cn } from "@/lib/utils";
 // import { HandleFileUpload } from "@/server/uploadFile";
 import { useAuth, useClerk } from "@clerk/clerk-react";
@@ -896,7 +897,7 @@ export function RunWorkflowInline({
             };
 
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_CD_API_URL}/api/run${model_id ? "/sync" : ""}`,
+          getApiRouteUrl(`/run${model_id ? "/sync" : ""}`),
           {
             method: "POST",
             headers: {

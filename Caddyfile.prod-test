@@ -13,10 +13,7 @@
     # Route block to control directive execution order
     route {
         # API proxy - test against production backend
-        reverse_proxy /api/* https://prod-staging.api.comfydeploy.com {
-            transport http {
-                tls
-            }
+        reverse_proxy /api/* {$CD_API_UPSTREAM:http://localhost:3011} {
             header_up Host {host}
             header_up X-Forwarded-Host {host}
             header_up X-Forwarded-Proto {scheme}

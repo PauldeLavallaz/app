@@ -42,9 +42,7 @@ export function useOrgSelector() {
     isLoading ||
     !isLoaded ||
     !isOrganizationLoaded ||
-    userMemberships.isFetching ||
-    workflowLimit?.data.customer_id === undefined ||
-    workflowLimit?.data.customer_id === ""
+    userMemberships.isFetching
   ) {
     return null;
     // return (
@@ -56,12 +54,14 @@ export function useOrgSelector() {
     // );
   }
 
+  const workflowUsage = workflowLimit.data?.usage ?? 0;
+
   //   The user is in a personal org, has other org, no workflows, show the org list
   if (!organization) {
     if (
       userMemberships?.count &&
       userMemberships.count > 0 &&
-      workflowLimit.data.usage === 0
+      workflowUsage === 0
     ) {
       return (
         <div className="h-full flex  w-full flex-col items-center justify-center p-8 bg-background z-50">
@@ -88,10 +88,10 @@ export function useOrgSelector() {
     //   "dontHaveAnyOrgs",
     //   dontHaveAnyOrgs,
     //   userMemberships,
-    //   workflowLimit.data.usage,
+    //   workflowUsage,
     //   workflowLimit,
     // );
-    if (dontHaveAnyOrgs && workflowLimit.data.usage === 0) {
+    if (dontHaveAnyOrgs && workflowUsage === 0) {
       const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const name = e.target.name.value;

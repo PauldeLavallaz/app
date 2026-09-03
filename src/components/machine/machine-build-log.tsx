@@ -146,7 +146,7 @@ function StepsUI(props: { logs: LogsType; machine: any }) {
     {
       id: "install-comfydeploy",
       name: "https://github.com/bennykok/comfyui-deploy",
-      displayName: "Install ComfyDeploy",
+      displayName: "Install Morfeo Deploy",
     },
     {
       id: "get-static-assets",

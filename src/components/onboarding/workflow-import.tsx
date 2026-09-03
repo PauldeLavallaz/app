@@ -52,6 +52,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
+import { isApiError } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
 import { useLatestHashes } from "@/utils/comfydeploy-hash";
 import { defaultWorkflowTemplates } from "@/utils/default-workflow";
@@ -64,6 +65,7 @@ import { useCurrentPlan } from "@/hooks/use-current-plan";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useQuery } from "@tanstack/react-query";
 import { Route } from "@/routes/workflows";
+import { buildImportedWorkflowPatch } from "./workflow-import-utils";
 
 // Add these interfaces
 export interface StepValidation {
@@ -587,6 +589,15 @@ export default function WorkflowImport() {
     const handleFinish = async () => {
         try {
             let machineId = validation.selectedMachineId;
+            const workflowJson =
+                validation.workflowJson?.trim() ||
+                validation.importJson?.trim() ||
+                "";
+
+            if (!workflowJson) {
+                toast.error("Workflow JSON is missing");
+                return;
+            }
 
             // Create new machine if needed
             if (validation.machineOption === "new") {
@@ -636,10 +647,7 @@ export default function WorkflowImport() {
             // Create workflow
             const workflowData = {
                 name: validation.workflowName,
-                workflow_json:
-                    typeof validation.workflowJson === "string"
-                        ? validation.workflowJson
-                        : JSON.stringify(validation.workflowJson),
+                workflow_json: workflowJson,
                 ...(validation.workflowApi && { workflow_api: validation.workflowApi }),
                 ...(machineId && { machine_id: machineId }),
             };
@@ -656,6 +664,12 @@ export default function WorkflowImport() {
                 `Workflow "${validation.workflowName}" created successfully!`,
             );
 
+            if (workflowResult.deployment_error) {
+                toast.warning(
+                    "Workflow was created, but the preview deployment could not be created automatically.",
+                );
+            }
+
             // Navigate to workflow page
             navigate({
                 to: "/workflows/$workflowId/$view",
@@ -666,7 +680,13 @@ export default function WorkflowImport() {
             });
         } catch (error) {
             console.error("Error creating workflow:", error);
-            toast.error("Failed to create workflow");
+            toast.error(
+                isApiError(error)
+                    ? error.message
+                    : error instanceof Error
+                      ? error.message
+                      : "Failed to create workflow",
+            );
         }
     };
 
@@ -874,7 +894,7 @@ function ImportedWorkflowView({
                 title,
                 nodeCount,
                 hasEnvironment: validation.hasEnvironment || false,
-                size: Math.round(validation.importJson.length / 1024),
+                size: Math.round((validation.importJson?.length || 0) / 1024),
             };
         } catch (error) {
             return {
@@ -994,75 +1014,12 @@ function ImportView() {
                 return;
             }
 
-            const json = JSON.parse(text);
-
-            // Validate that the JSON contains both 'nodes' and 'links' keys for ComfyUI workflows
-            // unless it has an environment (which means it's a ComfyDeploy export)
-            if (!json.environment && (!json.nodes || !json.links)) {
-                throw new Error(
-                    "Invalid workflow format: missing 'nodes' or 'links' keys",
-                );
-            }
-
-            const environment = json.environment;
-            const workflowAPIJson = json.workflow_api;
-
-            if (!environment) {
-                const importData = {
-                    importOption: "import" as const,
-                    importJson: text,
-                    workflowJson: text,
-                    hasEnvironment: false,
-                    workflowApi: undefined,
-                    importedFileName: fileName || "",
-
-                    // Reset dependencies to trigger re-analysis
-                    dependencies: undefined,
-                    selectedConflictingNodes: {},
-                    selectedCustomNodesToApply: undefined,
-
-                    docker_command_steps: undefined,
-                    gpuType: "A10G",
-                    comfyUiHash:
-                        latestHashes?.comfyui_hash ||
-                        "158419f3a0017c2ce123484b14b6c527716d6ec8",
-                    install_custom_node_with_gpu: false,
-                    base_docker_image: undefined,
-                    python_version: "3.11",
-                } as Partial<StepValidation>;
-
-                setValidation({
-                    ...importData,
-                });
-
-                return;
-            }
-
-            const data = {
-                importOption: "import" as const,
-                importJson: text,
-                workflowJson: "",
-                workflowApi: JSON.stringify(workflowAPIJson),
-                importedFileName: fileName || "",
-
-                // Reset dependencies to trigger re-analysis even with environment
-                dependencies: undefined,
-                selectedConflictingNodes: {},
-                selectedCustomNodesToApply: undefined,
-
-                docker_command_steps: environment.docker_command_steps,
-                gpuType: environment.gpu,
-                comfyUiHash: environment.comfyui_version,
-                install_custom_node_with_gpu: environment.install_custom_node_with_gpu,
-                base_docker_image: environment.base_docker_image,
-                python_version: environment.python_version,
-                hasEnvironment: true,
-            } as Partial<StepValidation>;
-
-            console.log(data);
-
             setValidation({
-                ...data,
+                ...(buildImportedWorkflowPatch(
+                    text,
+                    fileName,
+                    latestHashes,
+                ) as Partial<StepValidation>),
             });
         },
         [validation, setValidation, latestHashes],

@@ -1,4 +1,5 @@
 import type { LogsType } from "@/components/log/logs-viewer";
+import { getApiRouteUrl } from "@/lib/runtime-config";
 import { useAuth } from "@clerk/clerk-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ReadyState } from "react-use-websocket";
@@ -33,9 +34,7 @@ export function useMachineBuildProgress({
 
     setReadyState(ReadyState.CONNECTING);
 
-    const url = new URL(
-      `${process.env.NEXT_PUBLIC_CD_API_URL}/api/v2/stream-logs`,
-    );
+    const url = new URL(getApiRouteUrl("/v2/stream-logs"));
     // Treat machine_id as run_id for the v2 log stream
     url.searchParams.append("machine_id_version", machine_version_id);
     // Do not filter by log level so we receive builder/webhook/info logs uniformly

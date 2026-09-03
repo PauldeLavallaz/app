@@ -1,32 +1,43 @@
 import { useAuth, useOrganization, useUser } from "@clerk/clerk-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { NuqsAdapter } from "nuqs/adapters/react";
-import posthog from "posthog-js";
-import { PostHogProvider, usePostHog } from "posthog-js/react";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { GlobalErrorDialog } from "@/components/global-error-dialog";
 import { api } from "./api";
 import { isApiError } from "./api-error";
+import {
+  identifyAnalytics,
+  isAnalyticsConfigured,
+  setAnalyticsPersonPropertiesForFlags,
+  warmAnalyticsClient,
+} from "./analytics-client";
 import { useAuthStore } from "./auth-store";
 
+const ReactQueryDevtools =
+  process.env.NODE_ENV === "production"
+    ? null
+    : lazy(() =>
+        import("@tanstack/react-query-devtools").then((module) => ({
+          default: module.ReactQueryDevtools,
+        })),
+      );
+
 function PostHogUserIdentify() {
-  const posthog = usePostHog();
   const auth = useAuth();
   const { user, isSignedIn } = useUser();
   const { organization } = useOrganization();
 
   useEffect(() => {
-    if (!posthog || !process.env.VITE_PUBLIC_POSTHOG_KEY) return;
+    if (!isAnalyticsConfigured) return;
 
-    posthog.setPersonPropertiesForFlags({
+    setAnalyticsPersonPropertiesForFlags({
       org_id: organization?.id ?? null,
       org_name: organization?.name ?? null,
     });
   }, [organization?.id]);
 
   useEffect(() => {
-    if (!posthog || !process.env.VITE_PUBLIC_POSTHOG_KEY) return;
+    if (!isAnalyticsConfigured) return;
 
     const userProperties = {
       email: user?.primaryEmailAddress?.emailAddress,
@@ -34,58 +45,18 @@ function PostHogUserIdentify() {
       org_id: organization?.id ?? null,
       org_name: organization?.name ?? null,
     };
-    posthog.identify(auth.userId || undefined, userProperties || undefined);
+    identifyAnalytics(auth.userId || undefined, userProperties || undefined);
   }, [auth.userId, isSignedIn, organization?.id]);
 
   return <></>;
 }
 
-function getCookie(name: string) {
-  const value = `; ${document.cookie}`;
-  const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) return parts.pop()?.split(";").shift();
-}
-
-// Current not used can be enabled via middleware to avoid flickering feature flag with server side bootstrap
-const flags = getCookie("bootstrapData");
-
-let bootstrapData = {};
-if (flags) {
-  try {
-    bootstrapData = JSON.parse(decodeURIComponent(flags));
-  } catch (e) {
-    console.error("Failed to parse bootstrapData cookie", e);
-  }
-}
-
-// Only initialize PostHog if the key is provided
-if (process.env.VITE_PUBLIC_POSTHOG_KEY) {
-  posthog.init(process.env.VITE_PUBLIC_POSTHOG_KEY, {
-    api_host: process.env.VITE_PUBLIC_POSTHOG_HOST || "https://app.posthog.com",
-    capture_pageview: false, // Disable automatic pageview capture, as we capture manually
-    capture_pageleave: true, // Enable pageleave capture
-    debug: process.env.NODE_ENV === "development", // Enable debug mode in development
-    autocapture: {
-      // Disable autocapture of form inputs for privacy
-      capture_copied_text: false,
-    },
-    session_recording: {
-      // Configure session recording (can be controlled via feature flags)
-      maskAllInputs: true,
-    },
-    bootstrap: bootstrapData,
-    loaded: (posthog) => {
-      // Additional setup after PostHog is loaded
-      if (process.env.NODE_ENV === "development") {
-        console.log("PostHog loaded successfully");
-      }
-    },
-  });
-}
-
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
       retry: (count: number, error: Error) => {
         if (isApiError(error) && error.status === 403) return false;
         if (isApiError(error) && error.status === 404) return false;
@@ -158,12 +129,17 @@ export const queryClient = new QueryClient({
 });
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const { getToken, sessionId } = useAuth();
+  const { getToken, orgId, sessionId, userId } = useAuth();
+
+  useEffect(() => {
+    warmAnalyticsClient();
+  }, []);
 
   useEffect(() => {
     // console.log("sessionId", sessionId);
     useAuthStore.setState({
       fetchToken: getToken,
+      token: null,
     });
 
     getToken().then((token) => {
@@ -171,18 +147,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
         token: token,
       });
     });
-  }, [getToken, sessionId]);
+  }, [getToken, orgId, sessionId, userId]);
 
   return (
-    <PostHogProvider client={posthog}>
-      <NuqsAdapter>
-        <QueryClientProvider client={queryClient}>
-          <ReactQueryDevtools initialIsOpen={true} />
-          <PostHogUserIdentify />
-          <GlobalErrorDialog />
-          {children}
-        </QueryClientProvider>
-      </NuqsAdapter>
-    </PostHogProvider>
+    <NuqsAdapter>
+      <QueryClientProvider client={queryClient}>
+        {ReactQueryDevtools && (
+          <Suspense fallback={null}>
+            <ReactQueryDevtools initialIsOpen={false} />
+          </Suspense>
+        )}
+        <PostHogUserIdentify />
+        <GlobalErrorDialog />
+        {children}
+      </QueryClientProvider>
+    </NuqsAdapter>
   );
 }

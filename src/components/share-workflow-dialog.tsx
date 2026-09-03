@@ -87,7 +87,7 @@ export function ShareWorkflowDialog({
 
   const handleCopyExistingLink = async () => {
     if (existingShare) {
-      const shareUrl = `${window.location.origin}/share/${existingShare.user_id}/${existingShare.share_slug}`;
+      const shareUrl = `${window.location.origin}/share/workflow/${existingShare.user_id}/${existingShare.share_slug}`;
       await navigator.clipboard.writeText(shareUrl);
       toast.success("Existing share link copied to clipboard!");
     }
@@ -106,23 +106,46 @@ export function ShareWorkflowDialog({
       });
 
       toast.success(
-        "Workflow unpublished from community successfully! It's no longer shared.",
+        "Workflow unpublished from Explore successfully! It's no longer shared.",
       );
-      onOpenChange(false);
 
-      // Invalidate queries to refresh data
-      queryClient.invalidateQueries({
-        queryKey: ["workflow", workflowId, "shared-status"],
+      queryClient.setQueryData(["workflow", workflowId, "shared-status"], {
+        shared_workflows: [],
+        total: 0,
       });
-      queryClient.invalidateQueries({
-        queryKey: ["workflows"],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["workflow", workflowId, "shared-status"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["workflows"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["shared-workflows"],
+        }),
+      ]);
+
+      onOpenChange(false);
     } catch (error) {
       console.error("Unpublish error:", error);
       toast.error("Failed to unpublish workflow");
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const refreshShareQueries = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["workflow", workflowId, "shared-status"],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["workflows"],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["shared-workflows"],
+      }),
+    ]);
   };
 
   const handleUpdateWithLatestVersion = async () => {
@@ -149,13 +172,7 @@ export function ShareWorkflowDialog({
       );
       onOpenChange(false);
 
-      // Invalidate queries to refresh data
-      queryClient.invalidateQueries({
-        queryKey: ["workflow", workflowId, "shared-status"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["workflows"],
-      });
+      await refreshShareQueries();
     } catch (error) {
       console.error("Update error:", error);
       toast.error("Failed to update workflow");
@@ -211,19 +228,13 @@ export function ShareWorkflowDialog({
 
         toast.success(
           existingShare
-            ? "Workflow updated and published to community! Share link copied to clipboard."
-            : "Workflow published to community successfully! Share link copied to clipboard.",
+            ? "Workflow updated and published to Explore! Share link copied to clipboard."
+            : "Workflow published to Explore successfully! Share link copied to clipboard.",
         );
 
         onOpenChange(false);
 
-        // Invalidate queries to refresh data
-        queryClient.invalidateQueries({
-          queryKey: ["workflow", workflowId, "shared-status"],
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["workflows"],
-        });
+        await refreshShareQueries();
 
         // Reset form will be handled by useEffect when dialog closes
       }
@@ -251,7 +262,7 @@ export function ShareWorkflowDialog({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Share className="h-5 w-5" />
-              Publish to Community
+              Publish to Explore
             </DialogTitle>
           </DialogHeader>
 
@@ -261,10 +272,10 @@ export function ShareWorkflowDialog({
               <AlertDescription>
                 <div className="mb-1 font-semibold">
                   <span className="text-green-700 dark:text-green-400">
-                    🌍 Published to Community
+                    Published to Explore
                   </span>
                 </div>
-                This workflow is publicly visible in the community. You can copy
+                This workflow is publicly visible in Explore. You can copy
                 the link, update it with the latest version, or unpublish it.
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button
@@ -420,7 +431,7 @@ export function ShareWorkflowDialog({
                     : "Publishing..."
                   : existingShare
                     ? "Update & Publish"
-                    : "Publish to Community"}
+                    : "Publish to Explore"}
               </Button>
             </div>
           </form>

@@ -26,7 +26,7 @@ export const downloadImage = async ({
 
     const a = document.createElement("a");
     a.href = blobUrl;
-    a.download = fileName || "ComfyDeploy_download.jpg"; // Default filename
+    a.download = fileName || "Morfeo Deploy_download.jpg"; // Default filename
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

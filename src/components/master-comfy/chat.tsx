@@ -430,8 +430,8 @@ export function Chat() {
             >
               <div className="flex flex-row items-center gap-2">
                 <motion.img
-                  src="/icon-light.svg"
-                  alt="comfydeploy thinking"
+                  src="/morfeo-icon-light.svg"
+                  alt="Morfeo Deploy thinking"
                   className="h-7 w-7"
                   animate={
                     isLoading

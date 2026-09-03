@@ -2,27 +2,17 @@ import {
   ClerkProvider,
   useAuth,
   useClerk,
-  useOrganizationList,
 } from "@clerk/clerk-react";
 import {
-  createFileRoute,
-  createRoute,
   createRouter,
   RouterProvider,
   type Route as RouteType,
   redirect,
-  useLocation,
-  useRouter,
 } from "@tanstack/react-router";
 import ReactDOM from "react-dom/client";
 import { routeTree } from "./routeTree.gen";
 import "./globals.css";
-import { AutumnProvider } from "autumn-js/react";
-import { AnimatePresence } from "framer-motion";
-import { useEffect } from "react";
-import { LoadingIcon } from "@/components/ui/custom/loading-icon";
 import { getOrgPathInfo } from "@/utils/org-path";
-import { OrgSelector } from "./components/OrgSelector";
 import { LoadingProgress } from "./components/ui/loading-progress";
 import { SidebarProvider } from "./components/ui/sidebar";
 import { SidebarGhost } from "./components/ui/sidebar-ghost";
@@ -130,8 +120,8 @@ routeTree.update({
       if (currentRouteIncomingOrg !== currentOrg) {
         // console.log("shit", "setting org", currentRouteIncomingOrg);
         currentOrg = currentRouteIncomingOrg;
-        context.clerk?.setActive({
-          organization: currentRouteIncomingOrg,
+        await context.clerk?.setActive({
+          organization: notPersonalOrg ? currentRouteIncomingOrg : null,
         });
       }
     }
@@ -250,14 +240,11 @@ function InnerApp() {
   publicClerk = clerk;
 
   return (
-    // <AutumnProvider includeCredentials>
     <div className="animate-in" style={{ animationDuration: "300ms" }}>
       <div className="pointer-events-none fixed inset-0 z-[-1] flex flex-row bg-white">
         <div className="absolute h-full w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)]" />
         <SidebarGhost />
-        <AnimatePresence mode="wait">
-          {!auth.isLoaded && <LoadingProgress key="loading" />}
-        </AnimatePresence>
+        {!auth.isLoaded && <LoadingProgress key="loading" />}
       </div>
       <SidebarProvider>
         <Providers>
@@ -265,7 +252,6 @@ function InnerApp() {
         </Providers>
       </SidebarProvider>
     </div>
-    // </AutumnProvider>
   );
 }
 
@@ -280,17 +266,19 @@ if (!rootElement.innerHTML) {
       }}
       publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
       afterSignOutUrl="/"
-      afterSignUpUrl={
-        process.env.NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL || "/workflows"
+      signUpForceRedirectUrl={
+        process.env.NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL
       }
-      afterSignInUrl={
-        process.env.NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL || "/workflows"
+      signInForceRedirectUrl={
+        process.env.NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL
       }
       signUpFallbackRedirectUrl={
-        process.env.NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL
+        process.env.NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL ||
+        "/workflows"
       }
       signInFallbackRedirectUrl={
-        process.env.NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL
+        process.env.NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL ||
+        "/workflows"
       }
     >
       <InnerApp />

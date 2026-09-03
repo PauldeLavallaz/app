@@ -1,4 +1,7 @@
-import { sendEventToCD } from "@/components/workspace/sendEventToCD";
+import {
+  sanitizeWorkflowGraph,
+  sendEventToCD,
+} from "@/components/workspace/sendEventToCD";
 import type {
   InfiniteData,
   UseInfiniteQueryResult,
@@ -217,6 +220,11 @@ export const serverAction = async ({
 
   try {
     const prompt = await getPromptWithTimeout({ endpoint });
+    if (!prompt?.workflow || !prompt?.output) {
+      throw new Error("Prompt response did not include workflow data");
+    }
+
+    const sanitizedWorkflow = sanitizeWorkflowGraph(prompt.workflow);
     const mergedWorkflowApi = mergeMetaData(prompt.output, workflow_api);
 
     let new_machine_vesion_id: string | undefined = machine_version_id;
@@ -251,7 +259,7 @@ export const serverAction = async ({
         machine_version_id: new_machine_vesion_id,
         comfyui_snapshot: comfyui_snapshot,
         workflow_data: {
-          workflow: prompt.workflow,
+          workflow: sanitizedWorkflow,
           workflow_api: mergedWorkflowApi, // Use merged workflow_api instead of prompt.output
         },
       }),

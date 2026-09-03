@@ -1,7 +1,8 @@
 import { EventSourcePolyfill } from "event-source-polyfill";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { convertDateFields } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
+import { getApiRouteUrl } from "@/lib/runtime-config";
 
 export interface ProgressUpdate {
   run_id: string;
@@ -85,16 +86,39 @@ export function useProgressUpdates({
     },
   );
   const fetchToken = useAuthStore((state) => state.fetchToken);
+  const onUpdateRef = useRef(onUpdate);
 
   useEffect(() => {
+    onUpdateRef.current = onUpdate;
+  }, [onUpdate]);
+
+  useEffect(() => {
+    if (!runId && !workflowId && !machineId) {
+      setConnectionDetails({
+        status: "disconnected",
+        retryCount: 0,
+        maxRetries: 5,
+        isReconnecting: false,
+      });
+      return;
+    }
+
     // Clear the timeline when runId changes
     setProgressUpdates([]);
 
-    let eventSource: EventSource;
+    let eventSource: EventSource | undefined;
     let unmounted = false;
+    let shouldReconnect = reconnect ?? false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let retryCount = 0;
     const maxRetries = 5;
     const retryDelay = 3000; // 3 seconds
+    const terminalStatuses = new Set([
+      "success",
+      "failed",
+      "timeout",
+      "cancelled",
+    ]);
 
     const setupEventSource = async () => {
       setConnectionDetails((prev) => ({
@@ -106,9 +130,7 @@ export function useProgressUpdates({
 
       if (unmounted) return;
 
-      const url = new URL(
-        `${process.env.NEXT_PUBLIC_CD_API_URL}/api/v2/stream-progress`,
-      );
+      const url = new URL(getApiRouteUrl("/v2/stream-progress"));
       if (runId) {
         url.searchParams.append("run_id", runId);
       }
@@ -190,6 +212,8 @@ export function useProgressUpdates({
 
             case "stream_cancelled":
               console.log("Stream cancelled:", data.reason);
+              shouldReconnect = false;
+              eventSource?.close();
               setConnectionDetails((prev) => ({
                 ...prev,
                 status: "disconnected",
@@ -199,6 +223,8 @@ export function useProgressUpdates({
 
             case "stream_complete":
               console.log("Stream completed from:", data.source);
+              shouldReconnect = false;
+              eventSource?.close();
               setConnectionDetails((prev) => ({
                 ...prev,
                 status: "disconnected",
@@ -214,19 +240,24 @@ export function useProgressUpdates({
 
         // Handle actual progress updates (no type field means it's progress data)
         console.log("Progress update:", data);
-        if (onUpdate) {
-          onUpdate(data);
+        if (onUpdateRef.current) {
+          onUpdateRef.current(data);
         }
-        setProgressUpdates((prevUpdates) => [...prevUpdates, data]);
+        setProgressUpdates((prevUpdates) => [...prevUpdates.slice(-99), data]);
         setConnectionDetails((prev) => ({
           ...prev,
           status: "connected",
         }));
+
+        if (runId && terminalStatuses.has(data.status)) {
+          shouldReconnect = false;
+          eventSource?.close();
+        }
       };
 
       eventSource.onerror = (event) => {
         console.error("EventSource failed:", event);
-        eventSource.close();
+        eventSource?.close();
 
         setConnectionDetails((prev) => ({
           ...prev,
@@ -235,7 +266,7 @@ export function useProgressUpdates({
           isReconnecting: false,
         }));
 
-        if (reconnect) {
+        if (shouldReconnect) {
           if (retryCount < maxRetries && !unmounted) {
             retryCount++;
             console.log(
@@ -248,7 +279,7 @@ export function useProgressUpdates({
               isReconnecting: true,
               lastError: "Connection lost, reconnecting...",
             }));
-            setTimeout(setupEventSource, retryDelay);
+            retryTimer = setTimeout(setupEventSource, retryDelay);
           } else if (retryCount >= maxRetries) {
             console.error("Max retries reached. Real-time updates disabled.");
             setConnectionDetails((prev) => ({
@@ -280,13 +311,26 @@ export function useProgressUpdates({
       if (eventSource) {
         eventSource.close();
       }
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
       setConnectionDetails((prev) => ({
         ...prev,
         status: "disconnected",
         isReconnecting: false,
       }));
     };
-  }, [runId, workflowId, machineId, fetchToken]);
+  }, [
+    runId,
+    workflowId,
+    machineId,
+    fetchToken,
+    returnRun,
+    fromStart,
+    reconnect,
+    status,
+    deploymentId,
+  ]);
 
   return {
     progressUpdates,

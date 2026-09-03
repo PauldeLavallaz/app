@@ -2285,7 +2285,7 @@ function OptimizedRunnerDialog({
             This feature requires:
             <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>ComfyUI version &gt;= 0.3.45</li>
-              <li>Latest Comfy Deploy custom nodes</li>
+              <li>Latest Morfeo Deploy custom nodes</li>
             </ul>
             Please make sure your environment meets these requirements before
             enabling.

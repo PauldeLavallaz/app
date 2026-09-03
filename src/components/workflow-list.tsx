@@ -20,6 +20,7 @@ import { useDebounce } from "use-debounce";
 import { CloneWorkflowDialog } from "@/components/clone-workflow-dialog";
 import { DialogTemplate } from "@/components/dialog-template";
 import { AdminAndMember, useIsAdminAndMember } from "@/components/permissions";
+import { ShareWorkflowDialog } from "@/components/share-workflow-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -118,11 +119,18 @@ export function WorkflowList() {
 
   const user = useUser();
 
-  const { check, isLoading: isAutumnLoading } = useCustomer();
-  const workflowLimitFeature = check({ featureId: "workflow_limit" });
-  const workflowLimit = workflowLimitFeature.data.included_usage;
-  const isWorkflowLimited = workflowLimitFeature.data.allowed;
-  const currentWorkflowCount = workflowLimitFeature.data.usage;
+  const sub = useCurrentPlan();
+  const { data: planStatus } = useCurrentPlanWithStatus();
+  const { data: autumnResp } = useQuery<AutumnDataV2Response>({
+    queryKey: ["platform", "autumn-data"],
+  });
+  const { isLoading: isAutumnLoading } = useCustomer();
+  const {
+    isLimited: isWorkflowLimited,
+    limit: workflowLimit,
+    currentCount: currentWorkflowCount,
+    feature: workflowLimitFeature,
+  } = getWorkflowLimits(planStatus, autumnResp, sub);
 
   // console.log(workflowLimitFeature);
   // console.log(workflowLimit);
@@ -372,7 +380,7 @@ function PublicationStatusBadge({ workflowId }: { workflowId: string }) {
       className="bg-green-600/80 text-white text-xs backdrop-blur-sm hover:bg-green-700/80 dark:bg-green-500/80 dark:text-white dark:hover:bg-green-600/80"
     >
       <Globe className="h-3 w-3" />
-      Community
+      Explore
     </Badge>
   );
 }
@@ -413,6 +421,7 @@ function WorkflowActionsDropdown({
   setDeleteModalOpen,
   openRenameDialog,
   setCloneModalOpen,
+  setShareModalOpen,
   variant = "grid",
 }: {
   workflow: any;
@@ -420,10 +429,9 @@ function WorkflowActionsDropdown({
   setDeleteModalOpen: (open: boolean) => void;
   openRenameDialog: (e: React.MouseEvent<HTMLDivElement>) => void;
   setCloneModalOpen: (open: boolean) => void;
+  setShareModalOpen: (open: boolean) => void;
   variant?: "grid" | "list";
 }) {
-  const navigate = useNavigate();
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -452,6 +460,18 @@ function WorkflowActionsDropdown({
           }}
         >
           Clone
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            setShareModalOpen(true);
+          }}
+        >
+          <div className="flex w-full items-center justify-between gap-3">
+            Publish to Explore
+            <Globe className="h-4 w-4" />
+          </div>
         </DropdownMenuItem>
         <DropdownMenuItem
           className="text-destructive dark:text-red-400"
@@ -505,6 +525,7 @@ function WorkflowCard({
 }) {
   const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
   const [cloneModalOpen, setCloneModalOpen] = React.useState(false);
+  const [shareModalOpen, setShareModalOpen] = React.useState(false);
   const [modalOpen, setModalOpen] = React.useState<string>();
   const [renameValue, setRenameValue] = React.useState("");
   const { data: machine } = useMachine(workflow?.selected_machine_id);
@@ -544,6 +565,14 @@ function WorkflowCard({
             to: `/workflows/${newWorkflow.id}/workspace`,
           });
         }}
+      />
+      <ShareWorkflowDialog
+        open={shareModalOpen}
+        onOpenChange={setShareModalOpen}
+        workflowId={workflow.id}
+        workflowName={workflow.name || "Untitled Workflow"}
+        workflowDescription={workflow.description}
+        workflowCoverImage={workflow.cover_image ?? latest_output?.images?.[0]?.url}
       />
       <DialogTemplate
         open={modalOpen === "rename"}
@@ -666,6 +695,7 @@ function WorkflowCard({
                     setDeleteModalOpen={setDeleteModalOpen}
                     openRenameDialog={openRenameDialog}
                     setCloneModalOpen={setCloneModalOpen}
+                    setShareModalOpen={setShareModalOpen}
                     variant="grid"
                   />
                 </AdminAndMember>
@@ -791,6 +821,7 @@ function WorkflowCard({
                     setDeleteModalOpen={setDeleteModalOpen}
                     openRenameDialog={openRenameDialog}
                     setCloneModalOpen={setCloneModalOpen}
+                    setShareModalOpen={setShareModalOpen}
                     variant="list"
                   />
                 </AdminAndMember>

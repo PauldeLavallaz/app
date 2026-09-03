@@ -37,6 +37,7 @@ import {
 import { useEffect, useMemo, useRef } from "react";
 import { useIsAdminAndMember, useIsAdminOnly } from "@/components/permissions";
 import { Button } from "@/components/ui/button";
+import { getStudioBaseUrl } from "@/lib/runtime-config";
 import {
   BellIcon,
   type BellIconHandle,
@@ -79,7 +80,7 @@ import { api } from "@/lib/api";
 import { useCreditInDollars } from "@/lib/autumn-helpers";
 import { callServerPromise } from "@/lib/call-server-promise";
 import { cn, isDarkTheme } from "@/lib/utils";
-import { WorkflowsBreadcrumb } from "@/routes/workflows/$workflowId/$view.lazy";
+import { WorkflowsBreadcrumb } from "@/components/workflows-breadcrumb";
 import { getOrgPathInfo } from "@/utils/org-path";
 import { Icon } from "./icon-word";
 import { TopUpButton } from "./pricing/TopUpButton";
@@ -304,7 +305,7 @@ const links = [
   },
   {
     title: "Studio",
-    url: "https://studio.comfydeploy.com",
+    url: getStudioBaseUrl(),
     icon: Telescope,
   },
 ];
@@ -316,13 +317,13 @@ function ShareSidebar() {
         <div className="flex flex-row items-start justify-between">
           <Link href="/" className="flex flex-row items-start justify-between">
             <img
-              src="/icon-light.svg"
-              alt="comfydeploy"
+              src="/morfeo-icon-light.svg"
+              alt="Morfeo Deploy"
               className="ml-0.5 h-7 w-7 dark:hidden"
             />
             <img
-              src="/icon.svg"
-              alt="comfydeploy"
+              src="/morfeo-icon.svg"
+              alt="Morfeo Deploy"
               className="ml-0.5 hidden h-7 w-7 dark:block"
             />
           </Link>
@@ -399,13 +400,13 @@ export function AppSidebar() {
         <div className="flex flex-row items-start justify-between pt-2.5">
           <Link href="/" className="flex flex-row items-start justify-between">
             <img
-              src="/icon-light.svg"
-              alt="comfydeploy"
+              src="/morfeo-icon-light.svg"
+              alt="Morfeo Deploy"
               className="ml-1 h-7 w-7 dark:hidden"
             />
             <img
-              src="/icon.svg"
-              alt="comfydeploy"
+              src="/morfeo-icon.svg"
+              alt="Morfeo Deploy"
               className="ml-1 hidden h-7 w-7 dark:block"
             />
           </Link>
@@ -783,7 +784,7 @@ export function GuestSidebar() {
       <SidebarHeader>
         <div className="flex flex-row items-start justify-between">
           <Link
-            to="https://comfydeploy.com"
+            to="https://morfeodeploy.com"
             className="flex flex-row items-start justify-between"
           >
             <Icon />

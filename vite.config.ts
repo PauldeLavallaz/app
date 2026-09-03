@@ -17,6 +17,9 @@ export default defineConfig(({ command, mode }) => {
     NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: null,
     COMFY_DEPLOY_SHARED_MACHINE_API_URL: null,
     NEXT_PUBLIC_CD_API_URL: "http://localhost:3011",
+    NEXT_PUBLIC_APP_URL: "http://localhost:3001",
+    NEXT_PUBLIC_STUDIO_URL: null,
+    NEXT_PUBLIC_ADMIN_URL: null,
     NEXT_PUBLIC_NGROK_CD_API_URL: null,
     VITE_PUBLIC_POSTHOG_KEY: null,
     VITE_PUBLIC_POSTHOG_HOST: "https://app.posthog.com",
@@ -42,7 +45,7 @@ export default defineConfig(({ command, mode }) => {
     server: {
       proxy: {
         "/api": {
-          target: "http://localhost:3011",
+          target: env.NEXT_PUBLIC_CD_API_URL || "http://localhost:3011",
           changeOrigin: true,
         },
       },

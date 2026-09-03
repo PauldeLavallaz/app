@@ -1,5 +1,13 @@
-import { usePostHog } from "posthog-js/react";
 import { useCallback } from "react";
+import {
+  captureAnalytics,
+  getAnalyticsClient,
+  identifyAnalytics,
+  isAnalyticsConfigured,
+  resetAnalytics,
+  setAnalyticsPersonProperties,
+  setAnalyticsPersonPropertiesForFlags,
+} from "@/lib/analytics-client";
 
 /**
  * Custom hook for PostHog analytics with safe fallbacks
@@ -7,71 +15,76 @@ import { useCallback } from "react";
  * cases where PostHog is not initialized (e.g., when VITE_PUBLIC_POSTHOG_KEY is not set)
  */
 export function useAnalytics() {
-  const posthog = usePostHog();
-  const isEnabled = !!process.env.VITE_PUBLIC_POSTHOG_KEY && !!posthog;
+  const isEnabled = isAnalyticsConfigured;
 
   const track = useCallback(
     (eventName: string, properties?: Record<string, any>) => {
       if (!isEnabled) return;
-      posthog.capture(eventName, properties);
+      captureAnalytics(eventName, properties);
     },
-    [posthog, isEnabled],
+    [isEnabled],
   );
 
   const identify = useCallback(
     (userId: string, properties?: Record<string, any>) => {
       if (!isEnabled) return;
-      posthog.identify(userId, properties);
+      identifyAnalytics(userId, properties);
     },
-    [posthog, isEnabled],
+    [isEnabled],
   );
 
-  const setPersonProperties = useCallback(
+  const setPersonPropertiesSafe = useCallback(
     (properties: Record<string, any>) => {
       if (!isEnabled) return;
-      posthog.setPersonProperties(properties);
+      setAnalyticsPersonProperties(properties);
     },
-    [posthog, isEnabled],
+    [isEnabled],
   );
 
-  const setPersonPropertiesForFlags = useCallback(
+  const setPersonPropertiesForFlagsSafe = useCallback(
     (properties: Record<string, any>) => {
       if (!isEnabled) return;
-      posthog.setPersonPropertiesForFlags(properties);
+      setAnalyticsPersonPropertiesForFlags(properties);
     },
-    [posthog, isEnabled],
+    [isEnabled],
   );
 
   const reset = useCallback(() => {
     if (!isEnabled) return;
-    posthog.reset();
-  }, [posthog, isEnabled]);
+    resetAnalytics();
+  }, [isEnabled]);
 
   const isFeatureEnabled = useCallback(
     (flagKey: string, defaultValue = false) => {
       if (!isEnabled) return defaultValue;
-      return posthog.isFeatureEnabled(flagKey) ?? defaultValue;
+      void getAnalyticsClient().then((posthog) =>
+        posthog?.isFeatureEnabled(flagKey),
+      );
+      return defaultValue;
     },
-    [posthog, isEnabled],
+    [isEnabled],
   );
 
   const getFeatureFlag = useCallback(
     (flagKey: string, defaultValue?: any) => {
       if (!isEnabled) return defaultValue;
-      return posthog.getFeatureFlag(flagKey) ?? defaultValue;
+      void getAnalyticsClient().then((posthog) =>
+        posthog?.getFeatureFlag(flagKey),
+      );
+      return defaultValue;
     },
-    [posthog, isEnabled],
+    [isEnabled],
   );
 
   return {
     track,
     identify,
-    setPersonProperties,
-    setPersonPropertiesForFlags,
+    setPersonProperties: setPersonPropertiesSafe,
+    setPersonPropertiesForFlags: setPersonPropertiesForFlagsSafe,
     reset,
     isFeatureEnabled,
     getFeatureFlag,
     isEnabled,
-    posthog: isEnabled ? posthog : null,
+    posthog: null,
   };
 }

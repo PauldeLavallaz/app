@@ -43,16 +43,15 @@ import {
 } from "@/components/ui/tooltip";
 import { VirtualizedInfiniteList } from "@/components/virtualized-infinite-list";
 import {
-  useAutumnData,
-  useIsBusinessAllowed,
-  useIsSelfHostedAllowed,
+  useCurrentPlan,
+  useCurrentPlanWithStatus,
 } from "@/hooks/use-current-plan";
 import { useMachines } from "@/hooks/use-machine";
 import { api } from "@/lib/api";
+import { getMachineLimits } from "@/lib/autumn-helpers";
 import { callServerPromise } from "@/lib/call-server-promise";
 import { queryClient } from "@/lib/providers";
 import { cn } from "@/lib/utils";
-import type { Feature as AutumnFeature } from "@/types/autumn-v2";
 import { useLatestHashes } from "@/utils/comfydeploy-hash";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 
@@ -133,13 +132,16 @@ export function MachineList() {
     });
   };
 
-  const { check } = useCustomer();
-  const machineCheckResult = check({ featureId: "machine_limit" });
-  const canCreateMachine = machineCheckResult.data?.allowed;
+  const sub = useCurrentPlan();
+  const { data: planStatus } = useCurrentPlanWithStatus();
+  const {
+    isLimited: machineLimited,
+    limit: machineLimit,
+    currentCount: currentMachineCount,
+  } = getMachineLimits(planStatus, undefined, sub);
+  const canCreateMachine = !machineLimited;
 
-  // You can also check other features
-  const selfHostedCheckResult = check({ featureId: "self_hosted_machines" });
-  const canCreateSelfHosted = selfHostedCheckResult.data?.allowed;
+  const canCreateSelfHosted = true;
 
   const query = useMachines(
     debouncedSearchValue ?? undefined,
@@ -557,7 +559,7 @@ export function MachineList() {
             ? !canCreateSelfHosted
               ? "Upgrade to Business plan to create self-hosted machines."
               : "Self-hosted machines feature not available in your plan. Contact support for access."
-            : ""
+            : "Self-hosted machines are available without a plan limit."
         }
         description="Add self hosted comfyui machines to your account."
         serverAction={async (data) => {
@@ -598,8 +600,8 @@ export function MachineList() {
         containerClassName="flex-col"
         tooltip={
           !canCreateMachine
-            ? `Max ${machineCheckResult.data?.included_usage} ComfyUI machine for your account, upgrade to unlock more configuration.`
-            : `Max ${machineCheckResult.data?.included_usage} ComfyUI machine for your account`
+            ? `Max ${machineLimit} ComfyUI machine for your account, upgrade to unlock more configuration.`
+            : `${machineLimit} ComfyUI machines for your account`
         }
         title="Create New Machine"
         description="Create a new serverless ComfyUI machine based on the analyzed workflow."
@@ -687,9 +689,8 @@ export function MachineList() {
         subItems={[
           {
             name:
-              machineCheckResult.data?.usage !== undefined &&
-              machineCheckResult.data?.included_usage !== undefined
-                ? `Docker Machine (${machineCheckResult.data?.usage}/${machineCheckResult.data?.included_usage})`
+              currentMachineCount !== undefined
+                ? `Docker Machine (${currentMachineCount}/${machineLimit})`
                 : "Docker Machine",
             icon: Cloud,
             onClick: () => {
@@ -702,9 +703,9 @@ export function MachineList() {
             disabled: {
               disabled: !canCreateMachine,
               disabledText:
-                machineCheckResult.data?.included_usage !== undefined
-                  ? `Max ${machineCheckResult.data?.included_usage} Docker machines for your account. Upgrade to create more machines.`
-                  : `Max Docker machines for your account. Upgrade to create more machines.`,
+                machineLimit !== undefined
+                  ? `Max ${machineLimit} Docker machines for your account. Upgrade to create more machines.`
+                  : "Docker machine creation is temporarily unavailable.",
             },
           },
           {
@@ -719,7 +720,7 @@ export function MachineList() {
               disabled: !canCreateSelfHosted,
               disabledText: !canCreateSelfHosted
                 ? "Upgrade to Business plan to create self-hosted machines."
-                : "Self-hosted machines feature not available in your plan. Contact support for access.",
+                : "Self-hosted machine creation is temporarily unavailable.",
             },
           },
           {

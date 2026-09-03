@@ -20,3 +20,4 @@ dist/
 # Env
 .env*
 public/git-info.json
+.gstack/

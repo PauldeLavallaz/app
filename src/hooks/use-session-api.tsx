@@ -71,7 +71,10 @@ export function useSessionAPI(machineId?: string | null) {
       queryKeyHashFn: (queryKey) => {
         return [...queryKey, machineId].join(",");
       },
-      refetchInterval: 2000,
+      refetchInterval: (query) => {
+        const sessions = query.state.data;
+        return sessions?.length ? 10_000 : false;
+      },
       meta: {
         params:
           machineId && machineId !== "new"

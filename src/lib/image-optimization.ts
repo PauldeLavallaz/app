@@ -3,6 +3,8 @@
  * Based on the backend image optimization API
  */
 
+import { getApiRouteUrl } from "./runtime-config";
+
 export interface ImageTransformOptions {
   width?: number;
   height?: number;
@@ -17,8 +19,7 @@ export const getOptimizedImageUrl = (
   imagePath: string,
   transformations = "auto",
 ): string => {
-  // const baseUrl = process.env.NEXT_PUBLIC_CD_API_URL || "";
-  return `/api/optimize/${transformations}/${imagePath}`;
+  return getApiRouteUrl(`/optimize/${transformations}/${imagePath}`);
 };
 
 /**

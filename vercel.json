@@ -1,28 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "has": [
-        {
-          "type": "host",
-          "value": "app.comfydeploy.com"
-        }
-      ],
-      "destination": "https://api.comfydeploy.com/api/:path*"
-    },
-    {
-      "source": "/api/:path*",
-      "has": [
-        {
-          "type": "host",
-          "value": "beta.app.comfydeploy.com"
-        }
-      ],
-      "destination": "https://prod-staging.api.comfydeploy.com/api/:path*"
-    },
-    {
-      "source": "/api/:path*",
-      "destination": "https://staging.api.comfydeploy.com/api/:path*"
+      "source": "/api/(.*)",
+      "destination": "https://pdelavallaz--morfeodeploy-api-fastapi-app.modal.run/api/$1"
     },
     {
       "source": "/(.*)",

@@ -10,6 +10,7 @@ import { Link } from "@tanstack/react-router";
 import { Download, Eye, Grid2X2, LayoutList, Search, User } from "lucide-react";
 import * as React from "react";
 import { getRelativeTime } from "@/lib/get-relative-time";
+import { getApiRouteUrl } from "@/lib/runtime-config";
 import { useSharedWorkflows } from "@/hooks/use-shared-workflows";
 import { useDebounce } from "use-debounce";
 import { useLocalStorage } from "@/hooks/use-local-storage";
@@ -203,7 +204,7 @@ function SharedWorkflowCard({
 
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_CD_API_URL}/api/shared-workflows/${workflow.share_slug}/download`,
+        getApiRouteUrl(`/shared-workflows/${workflow.share_slug}/download`),
       );
 
       if (response.ok) {

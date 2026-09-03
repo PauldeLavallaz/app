@@ -19,6 +19,7 @@ import { PlaygroundOutputRenderRun } from "@/components/workflows/OutputRender";
 import { RunDetails } from "@/components/workflows/WorkflowComponent";
 import { api } from "@/lib/api";
 import { getDefaultValuesFromWorkflow } from "@/lib/getInputsFromWorkflow";
+import { getApiRouteUrl } from "@/lib/runtime-config";
 
 export const Route = createFileRoute("/share/$user/$slug")({
   component: RouteComponent,
@@ -39,7 +40,7 @@ function RouteComponent() {
       } else {
         // Use regular fetch for unauthenticated users
         return fetch(
-          `${process.env.NEXT_PUBLIC_CD_API_URL}/api/share/${userParam}/${slug}`,
+          getApiRouteUrl(`/share/${userParam}/${slug}`),
         ).then((res) => (res.ok ? res.json() : null));
       }
     },

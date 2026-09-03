@@ -17,11 +17,11 @@ import { useFormStatus } from "react-dom";
 import "./cal-init";
 
 import { useCurrentPlan } from "@/hooks/use-current-plan";
+import { useAnalytics } from "@/hooks/use-analytics";
 import { api } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useRouter } from "@tanstack/react-router";
-import { usePostHog } from "posthog-js/react";
 import Calendar from "./Cal";
 
 async function submitOnboardingForm(prevState: any, formData: FormData) {
@@ -54,12 +54,12 @@ async function submitOnboardingForm(prevState: any, formData: FormData) {
 }
 
 export function OnboardingCall() {
-  const posthog = usePostHog();
+  const { track } = useAnalytics();
   const sub = useCurrentPlan();
   const route = useRouter();
 
   useEffect(() => {
-    posthog.capture("pricing_dialog:open");
+    track("pricing_dialog:open");
   }, []);
 
   return (

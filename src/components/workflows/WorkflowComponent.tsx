@@ -23,6 +23,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { LogsViewer } from "@/components/log/logs-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { getApiRouteUrl } from "@/lib/runtime-config";
 import {
   Dialog,
   DialogContent,
@@ -530,7 +531,7 @@ export function LogsTab({ runId }: { runId: string }) {
       if (unmounted) return;
 
       const url = new URL(
-        `${process.env.NEXT_PUBLIC_CD_API_URL}/api/v2/stream-logs`,
+        getApiRouteUrl("/v2/stream-logs"),
       );
       url.searchParams.append("run_id", runId);
       url.searchParams.append("log_level", "info");
@@ -642,7 +643,7 @@ function WebhookTab({ run, webhook }: { run: any; webhook: string }) {
       if (unmounted) return;
 
       const url = new URL(
-        `${process.env.NEXT_PUBLIC_CD_API_URL}/api/v2/stream-logs`,
+        getApiRouteUrl("/v2/stream-logs"),
       );
       url.searchParams.append("run_id", run.id);
       url.searchParams.append("log_level", "webhook");

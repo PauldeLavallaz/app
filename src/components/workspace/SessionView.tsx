@@ -16,6 +16,7 @@ import { Button } from "../ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import { WorkspaceLoading } from "./WorkspaceLoading";
 import { useWorkflowIdInSessionView } from "@/hooks/hook";
+import { getApiRouteUrl } from "@/lib/runtime-config";
 
 export function getSessionStatus(session: any, isLive: boolean | undefined) {
   if (!session) {
@@ -164,7 +165,11 @@ export function useSession(sessionId: string | undefined | null) {
       }
 
       if (query.state.data) {
-        return 1000;
+        const status = query.state.data.status;
+        if (["queued", "starting", "not-started", "warming"].includes(status)) {
+          return 2_500;
+        }
+        return 15_000;
       }
 
       return false;
@@ -310,7 +315,7 @@ function useLogListener({ sessionId }: { sessionId?: string }) {
       if (unmounted) return;
 
       const url = new URL(
-        `${process.env.NEXT_PUBLIC_CD_API_URL}/api/v2/stream-logs`,
+        getApiRouteUrl("/v2/stream-logs"),
       );
       url.searchParams.append("session_id", sessionId);
       url.searchParams.append("log_level", "info");

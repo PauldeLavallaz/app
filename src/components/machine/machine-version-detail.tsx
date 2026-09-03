@@ -9,6 +9,7 @@ import {
 } from "@/components/machine/machine-build-log";
 import { Badge } from "@/components/ui/badge";
 import { useMachineVersion } from "@/hooks/use-machine";
+import { getApiRouteUrl } from "@/lib/runtime-config";
 import { cn } from "@/lib/utils";
 import { LoadingIcon } from "../ui/custom/loading-icon";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
@@ -204,7 +205,7 @@ function MachineVersionBuildLog({
   machine: any;
   machineVersion: any;
 }) {
-  const machineEndpoint = `${process.env.NEXT_PUBLIC_CD_API_URL}/api/machine`;
+  const machineEndpoint = getApiRouteUrl("/machine");
 
   return (
     <div className="flex flex-col gap-2">

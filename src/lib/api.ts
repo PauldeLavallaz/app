@@ -1,6 +1,7 @@
 import { ApiError } from "./api-error";
 import { emitApiError } from "./api-error-bus";
 import { useAuthStore } from "./auth-store";
+import { getApiRouteUrl } from "./runtime-config";
 
 export async function api({
   url,
@@ -40,14 +41,11 @@ export async function api({
 
   const headers = {
     ...defaultHeaders,
+    ...(auth ? { Authorization: `Bearer ${auth}` } : {}),
     ...init?.headers,
   };
 
-  // Use relative URL in production/staging, full URL in local development
-  const isLocal = process.env.NODE_ENV === "development";
-  const finalUrl = isLocal
-    ? `${process.env.NEXT_PUBLIC_CD_API_URL}/api/${url}${queryString}`
-    : `/api/${url}${queryString}`;
+  const finalUrl = `${getApiRouteUrl(url)}${queryString}`;
 
   // Use XMLHttpRequest for upload progress
   if (onUploadProgress) {

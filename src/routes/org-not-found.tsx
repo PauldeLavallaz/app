@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button"; // Assuming you have this UI component
+import { getAdminBaseUrl } from "@/lib/runtime-config";
 import { useOrganizationList } from "@clerk/clerk-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
@@ -31,7 +32,7 @@ function RouteComponent() {
   );
 
   const handleAdminRedirect = () => {
-    const baseUrl = "https://admin.comfydeploy.com";
+    const baseUrl = getAdminBaseUrl();
     window.location.href = `${baseUrl}/?tab=users&q=${org}`;
   };
 

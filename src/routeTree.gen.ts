@@ -55,25 +55,25 @@ const UsageRoute = UsageImport.update({
   id: '/usage',
   path: '/usage',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() => import('./routes/usage.lazy').then((d) => d.Route))
 
 const SettingsRoute = SettingsImport.update({
   id: '/settings',
   path: '/settings',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() => import('./routes/settings.lazy').then((d) => d.Route))
 
 const SecretsRoute = SecretsImport.update({
   id: '/secrets',
   path: '/secrets',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() => import('./routes/secrets.lazy').then((d) => d.Route))
 
 const PricingRoute = PricingImport.update({
   id: '/pricing',
   path: '/pricing',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() => import('./routes/pricing.lazy').then((d) => d.Route))
 
 const OrgNotFoundRoute = OrgNotFoundImport.update({
   id: '/org-not-found',
@@ -85,19 +85,21 @@ const OnboardingCallRoute = OnboardingCallImport.update({
   id: '/onboarding-call',
   path: '/onboarding-call',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() =>
+  import('./routes/onboarding-call.lazy').then((d) => d.Route),
+)
 
 const ModelsRoute = ModelsImport.update({
   id: '/models',
   path: '/models',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() => import('./routes/models.lazy').then((d) => d.Route))
 
 const ExploreRoute = ExploreImport.update({
   id: '/explore',
   path: '/explore',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() => import('./routes/explore.lazy').then((d) => d.Route))
 
 const CreateOrgRoute = CreateOrgImport.update({
   id: '/create-org',
@@ -109,13 +111,13 @@ const AssetsRoute = AssetsImport.update({
   id: '/assets',
   path: '/assets',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() => import('./routes/assets.lazy').then((d) => d.Route))
 
 const ApiKeysRoute = ApiKeysImport.update({
   id: '/api-keys',
   path: '/api-keys',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() => import('./routes/api-keys.lazy').then((d) => d.Route))
 
 const IndexRoute = IndexImport.update({
   id: '/',
@@ -135,19 +137,25 @@ const SessionsIndexRoute = SessionsIndexImport.update({
   id: '/sessions/',
   path: '/sessions/',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() =>
+  import('./routes/sessions/index.lazy').then((d) => d.Route),
+)
 
 const OrganizationProfileIndexRoute = OrganizationProfileIndexImport.update({
   id: '/organization-profile/',
   path: '/organization-profile/',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() =>
+  import('./routes/organization-profile/index.lazy').then((d) => d.Route),
+)
 
 const MachinesIndexRoute = MachinesIndexImport.update({
   id: '/machines/',
   path: '/machines/',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() =>
+  import('./routes/machines/index.lazy').then((d) => d.Route),
+)
 
 const AnalyticsIndexRoute = AnalyticsIndexImport.update({
   id: '/analytics/',
@@ -174,7 +182,11 @@ const OrganizationProfileOrganizationMembersIndexRoute =
     id: '/organization-profile/organization-members/',
     path: '/organization-profile/organization-members/',
     getParentRoute: () => rootRoute,
-  } as any)
+  } as any).lazy(() =>
+    import(
+      './routes/organization-profile/organization-members/index.lazy'
+    ).then((d) => d.Route),
+  )
 
 const MachinesMachineIdIndexRoute = MachinesMachineIdIndexImport.update({
   id: '/machines/$machineId/',

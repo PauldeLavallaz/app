@@ -6,7 +6,7 @@ import { useCurrentPlan, useCurrentPlanWithStatus } from "@/hooks/use-current-pl
 import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
 import { createLazyFileRoute, useNavigate } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
-import type { Feature as AutumnFeature, AutumnDataV2Response } from "@/types/autumn-v2";
+import type { AutumnDataV2Response } from "@/types/autumn-v2";
 import { useQuery } from "@tanstack/react-query";
 import { getWorkflowLimits } from "@/lib/autumn-helpers";
 

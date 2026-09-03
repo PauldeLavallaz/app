@@ -9,8 +9,12 @@ import {
   type StepValidation,
   useImportWorkflowStore,
 } from "@/components/onboarding/workflow-import";
-import { useCurrentPlan, useCurrentPlanWithStatus } from "@/hooks/use-current-plan";
+import {
+  useCurrentPlan,
+  useCurrentPlanWithStatus,
+} from "@/hooks/use-current-plan";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { getMachineLimits } from "@/lib/autumn-helpers";
 
 // Local type definitions
 interface CustomNodeData {
@@ -53,7 +57,6 @@ const CustomNodesLoadingSkeleton = () => (
 );
 
 import { useQuery } from "@tanstack/react-query";
-import type { Feature as AutumnFeature } from "@/types/autumn-v2";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertCircle,
@@ -282,15 +285,11 @@ export function WorkflowImportSelectedMachine() {
   const setValidation = validation.setValidation;
 
   const sub = useCurrentPlan();
-  // Autumn machine limit for gating creation inside the import flow via plan status
-  // Use the existing plan status hook to avoid extra queries
   const { data: planStatus } = useCurrentPlanWithStatus();
-  const autumnData = planStatus?.plans?.autumn_data;
-  const machineLimitFeature = (autumnData?.features?.["machine_limit"] ?? null) as (AutumnFeature | null);
-  const machineLimit = machineLimitFeature?.included_usage ?? sub?.features?.machineLimit;
-  const MACHINE_LIMIT_REACHED = machineLimitFeature
-    ? !(machineLimitFeature.unlimited) && (machineLimitFeature.balance ?? 0) <= 0
-    : sub?.features?.machineLimited;
+  const {
+    limit: machineLimit,
+    isLimited: MACHINE_LIMIT_REACHED,
+  } = getMachineLimits(planStatus, undefined, sub);
   const isFreePlan = !sub?.plans?.plans?.length || sub?.plans?.plans?.includes("free");
 
   // Clear machine config when switching between new/existing machine

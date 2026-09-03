@@ -21,19 +21,7 @@ import { isMachineDeprecated } from "@/components/machines/machine-list-item";
 import { PaddingLayout } from "@/components/PaddingLayout";
 import { useIsAdminAndMember } from "@/components/permissions";
 import { Playground } from "@/components/run/SharePageComponent";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { RealtimeWorkflowProvider } from "@/components/workflows/RealtimeRunUpdate";
 import RunComponent from "@/components/workflows/RunComponent";
 import WorkflowComponent from "@/components/workflows/WorkflowComponent";
@@ -49,8 +37,8 @@ import { useMachine, useMachineVersionsAll } from "@/hooks/use-machine";
 import { api } from "@/lib/api";
 import { callServerPromise } from "@/lib/call-server-promise";
 import { cn } from "@/lib/utils";
-import { StoragePage } from "@/routes/models";
-import { PricingPage } from "@/routes/pricing";
+import { StoragePage } from "@/routes/models.lazy";
+import { PricingPage } from "@/routes/pricing.lazy";
 
 export const Route = createLazyFileRoute("/workflows/$workflowId/$view")({
   component: WorkflowPageComponent,
@@ -366,33 +354,5 @@ function MachineHeader({ machine }: { machine: any }) {
         )}
       </div>
     </div>
-  );
-}
-
-export function WorkflowsBreadcrumb() {
-  return (
-    <Breadcrumb>
-      <BreadcrumbList>
-        <BreadcrumbItem>
-          <Link href="/">Home</Link>
-        </BreadcrumbItem>
-        <BreadcrumbSeparator />
-        <BreadcrumbItem>
-          <DropdownMenu>
-            <DropdownMenuTrigger className="flex items-center gap-1">
-              <span>Workflows</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem>
-                <Link href="/machines">Machines</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Link href="/storage">Storage</Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </BreadcrumbItem>
-      </BreadcrumbList>
-    </Breadcrumb>
   );
 }

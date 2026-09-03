@@ -1,24 +1,52 @@
+import { useQuery } from "@tanstack/react-query";
 import { useCustomer } from "autumn-js/react";
 import type {
   AutumnDataV2Response,
   Feature as AutumnFeature,
 } from "@/types/autumn-v2";
 
+const PAID_PLAN_IDS = new Set([
+  "creator_monthly",
+  "creator_yearly",
+  "deployment_monthly",
+  "deployment_yearly",
+  "business_monthly",
+  "business_yearly",
+]);
+
+function hasPaidPlan(products?: Array<{ id?: string }>) {
+  return products?.some((product) => product.id && PAID_PLAN_IDS.has(product.id));
+}
+
 export function useCredit() {
   const { check, customer, isLoading } = useCustomer();
+  const { data: userSettings, isLoading: isSettingsLoading } = useQuery<any>({
+    queryKey: ["platform", "user-settings"],
+  });
 
-  const isFreePlan = customer?.products.find((x) => x.id === "free");
+  const isFreePlan = !hasPaidPlan(customer?.products);
   const credit = isFreePlan
     ? check({ featureId: "gpu-credit-topup" })
     : check({ featureId: "gpu-credit" });
+  const localCreditCents = Math.round(Number(userSettings?.credit ?? 0) * 100);
+  const mergedCredit =
+    localCreditCents > 0
+      ? {
+          ...(credit ?? {}),
+          data: {
+            ...(credit?.data ?? {}),
+            balance: Number(credit?.data?.balance ?? 0) + localCreditCents,
+          },
+        }
+      : credit;
 
-  return { credit, isLoading };
+  return { credit: mergedCredit, isLoading: isLoading || isSettingsLoading };
 }
 
 export function useFreePlan() {
-  const { check, customer, isLoading } = useCustomer();
+  const { customer, isLoading } = useCustomer();
 
-  const isFreePlan = customer?.products.find((x) => x.id === "free");
+  const isFreePlan = !hasPaidPlan(customer?.products);
 
   return { isFreePlan, isLoading };
 }
@@ -65,6 +93,26 @@ export function getAutumnFeature(
   return (autumnData?.features?.[featureId] ?? null) as AutumnFeature | null;
 }
 
+function parseIncludedUsage(value: unknown, unlimited?: boolean) {
+  if (unlimited) return { isUnlimited: true, limit: "Unlimited" as const };
+  if (
+    value === undefined ||
+    value === null ||
+    String(value).toLowerCase() === "inf" ||
+    String(value).toLowerCase() === "infinity" ||
+    String(value).toLowerCase() === "unlimited"
+  ) {
+    return { isUnlimited: true, limit: "Unlimited" as const };
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return { isUnlimited: true, limit: "Unlimited" as const };
+  }
+
+  return { isUnlimited: false, limit: parsed };
+}
+
 /**
  * Check if workflows are limited based on autumn data (prioritizing autumnResp)
  */
@@ -86,27 +134,35 @@ export function getWorkflowLimits(
     autumnResp,
   );
 
-  const isUnlimited = workflowLimitFeature?.unlimited === true;
-  const isLimited = workflowLimitFeature
-    ? !workflowLimitFeature.unlimited &&
-      (workflowLimitFeature.balance ?? 0) <= 0
-    : (fallbackSub?.features?.workflowLimited ?? false);
-
-  const limit = isUnlimited
-    ? "Unlimited"
-    : (workflowLimitFeature?.included_usage ??
-      fallbackSub?.features?.workflowLimit ??
-      0);
-
   const currentCount =
     workflowLimitFeature?.usage ??
     fallbackSub?.features?.currentWorkflowCount ??
     0;
 
+  if (workflowLimitFeature) {
+    const { isUnlimited, limit } = parseIncludedUsage(
+      workflowLimitFeature.included_usage,
+      workflowLimitFeature.unlimited,
+    );
+    return {
+      isUnlimited,
+      isLimited: !isUnlimited && currentCount >= Number(limit),
+      limit,
+      currentCount,
+      feature: workflowLimitFeature,
+    };
+  }
+
+  const fallbackLimit = fallbackSub?.features?.workflowLimit;
+  const fallbackLimited = fallbackSub?.features?.workflowLimited;
+
   return {
-    isUnlimited,
-    isLimited,
-    limit,
+    isUnlimited: fallbackLimit === undefined || fallbackLimit >= 999999999,
+    isLimited: fallbackLimited ?? false,
+    limit:
+      fallbackLimit === undefined || fallbackLimit >= 999999999
+        ? "Unlimited"
+        : fallbackLimit,
     currentCount,
     feature: workflowLimitFeature,
   };
@@ -133,26 +189,35 @@ export function getMachineLimits(
     autumnResp,
   );
 
-  const isUnlimited = machineLimitFeature?.unlimited === true;
-  const isLimited = machineLimitFeature
-    ? !machineLimitFeature.unlimited && (machineLimitFeature.balance ?? 0) <= 0
-    : (fallbackSub?.features?.machineLimited ?? false);
-
-  const limit = isUnlimited
-    ? "Unlimited"
-    : (machineLimitFeature?.included_usage ??
-      fallbackSub?.features?.machineLimit ??
-      0);
-
   const currentCount =
     machineLimitFeature?.usage ??
     fallbackSub?.features?.currentMachineCount ??
     0;
 
+  if (machineLimitFeature) {
+    const { isUnlimited, limit } = parseIncludedUsage(
+      machineLimitFeature.included_usage,
+      machineLimitFeature.unlimited,
+    );
+    return {
+      isUnlimited,
+      isLimited: !isUnlimited && currentCount >= Number(limit),
+      limit,
+      currentCount,
+      feature: machineLimitFeature,
+    };
+  }
+
+  const fallbackLimit = fallbackSub?.features?.machineLimit;
+  const fallbackLimited = fallbackSub?.features?.machineLimited;
+
   return {
-    isUnlimited,
-    isLimited,
-    limit,
+    isUnlimited: fallbackLimit === undefined || fallbackLimit >= 999999999,
+    isLimited: fallbackLimited ?? false,
+    limit:
+      fallbackLimit === undefined || fallbackLimit >= 999999999
+        ? "Unlimited"
+        : fallbackLimit,
     currentCount,
     feature: machineLimitFeature,
   };
@@ -182,10 +247,9 @@ export function getSelfHostedMachinesAllowed(
     autumnResp: autumnResp?.autumn_data?.features?.["self_hosted_machines"],
   });
 
-  // For boolean/static features, the presence of the feature indicates access
-  // Static features in Autumn don't use balance - they're either present or not
+  // Morfeo Deploy does not plan-gate self-hosted machines.
   if (!selfHostedFeature) {
-    return false;
+    return true;
   }
 
   // For static/boolean features, if the feature exists, the user has access
